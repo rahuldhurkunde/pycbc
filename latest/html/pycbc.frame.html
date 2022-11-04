@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>pycbc.frame package &mdash; PyCBC 2.0.6dev documentation</title>
+      <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="_static/plot_directive.css" type="text/css" />
+      <link rel="stylesheet" href="_static/graphviz.css" type="text/css" />
+      <link rel="stylesheet" href="_static/design-style.4045f2051d55cab465a707391d5b2007.min.css" type="text/css" />
+  <!--[if lt IE 9]>
+    <script src="_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
+        <script src="_static/jquery.js"></script>
+        <script src="_static/underscore.js"></script>
+        <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="_static/doctools.js"></script>
+        <script src="_static/sphinx_highlight.js"></script>
+        <script src="_static/typed.min.js"></script>
+        <script src="_static/terminal.css"></script>
+        <script src="_static/theme_overrides.css"></script>
+        <script src="_static/design-tabs.js"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="pycbc.inference package" href="pycbc.inference.html" />
+    <link rel="prev" title="pycbc.filter package" href="pycbc.filter.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search"  style="background: linear-gradient(0deg, rgba(0,0,0,1) 0%, rgba(193,193,255,1) 85%)" >
+            <a href="index.html">
+            <img src="https://raw.githubusercontent.com/gwastro/pycbc-logo/master/pycbc_logo_name.png" class="logo" alt="Logo"/>
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="install.html">Installing PyCBC</a></li>
+<li class="toctree-l1"><a class="reference internal" href="credit.html">Use of PyCBC in Scientific Publications</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="modules.html">Modules</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="pycbc.html">pycbc package</a><ul class="current">
+<li class="toctree-l3 current"><a class="reference internal" href="pycbc.html#subpackages">Subpackages</a><ul class="current">
+<li class="toctree-l4"><a class="reference internal" href="pycbc.catalog.html">pycbc.catalog package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pycbc.distributions.html">pycbc.distributions package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pycbc.events.html">pycbc.events package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pycbc.fft.html">pycbc.fft package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pycbc.filter.html">pycbc.filter package</a></li>
+<li class="toctree-l4 current"><a class="current reference internal" href="#">pycbc.frame package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pycbc.inference.html">pycbc.inference package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pycbc.inject.html">pycbc.inject package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pycbc.io.html">pycbc.io package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pycbc.neutron_stars.html">pycbc.neutron_stars package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pycbc.noise.html">pycbc.noise package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pycbc.population.html">pycbc.population package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pycbc.psd.html">pycbc.psd package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pycbc.results.html">pycbc.results package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pycbc.strain.html">pycbc.strain package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pycbc.tmpltbank.html">pycbc.tmpltbank package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pycbc.types.html">pycbc.types package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pycbc.vetoes.html">pycbc.vetoes package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pycbc.waveform.html">pycbc.waveform package</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pycbc.workflow.html">pycbc.workflow package</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="pycbc.html#submodules">Submodules</a></li>
+<li class="toctree-l3"><a class="reference internal" href="pycbc.html#module-pycbc.bin_utils">pycbc.bin_utils module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="pycbc.html#module-pycbc.boundaries">pycbc.boundaries module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="pycbc.html#module-pycbc.conversions">pycbc.conversions module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="pycbc.html#module-pycbc.coordinates">pycbc.coordinates module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="pycbc.html#module-pycbc.cosmology">pycbc.cosmology module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="pycbc.html#module-pycbc.detector">pycbc.detector module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="pycbc.html#module-pycbc.dq">pycbc.dq module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="pycbc.html#module-pycbc.libutils">pycbc.libutils module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="pycbc.html#module-pycbc.mchirp_area">pycbc.mchirp_area module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="pycbc.html#module-pycbc.opt">pycbc.opt module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="pycbc.html#module-pycbc.pnutils">pycbc.pnutils module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="pycbc.html#module-pycbc.pool">pycbc.pool module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="pycbc.html#module-pycbc.rate">pycbc.rate module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="pycbc.html#module-pycbc.scheme">pycbc.scheme module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="pycbc.html#module-pycbc.sensitivity">pycbc.sensitivity module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="pycbc.html#module-pycbc.transforms">pycbc.transforms module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="pycbc.html#module-pycbc.version">pycbc.version module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="pycbc.html#module-pycbc">Module contents</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="genindex.html">Index</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">User Guides</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="tutorials.html">Library Examples and Interactive Tutorials</a></li>
+<li class="toctree-l1"><a class="reference internal" href="inference.html">PyCBC inference documentation (<code class="docutils literal notranslate"><span class="pre">pycbc.inference</span></code>)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="apps.html">Applications and Workflows</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Dev Guides</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="extend.html">Extending PyCBC with external plugins</a></li>
+<li class="toctree-l1"><a class="reference internal" href="devs.html">Documentation for Developers</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu"  style="background: linear-gradient(0deg, rgba(0,0,0,1) 0%, rgba(193,193,255,1) 85%)" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">PyCBC</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home"></a></li>
+          <li class="breadcrumb-item"><a href="modules.html">pycbc</a></li>
+          <li class="breadcrumb-item"><a href="pycbc.html">pycbc package</a></li>
+      <li class="breadcrumb-item active">pycbc.frame package</li>
+      <li class="wy-breadcrumbs-aside">
+              <a href="https://github.com/gwastro/pycbc/blob/master/docs/pycbc.frame.rst" class="fa fa-github"> Edit on GitHub</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="pycbc-frame-package">
+<h1>pycbc.frame package<a class="headerlink" href="#pycbc-frame-package" title="Permalink to this heading">¶</a></h1>
+<section id="submodules">
+<h2>Submodules<a class="headerlink" href="#submodules" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="module-pycbc.frame.frame">
+<span id="pycbc-frame-frame-module"></span><h2>pycbc.frame.frame module<a class="headerlink" href="#module-pycbc.frame.frame" title="Permalink to this heading">¶</a></h2>
+<p>This modules contains functions for reading in data from frame files or caches</p>
+<dl class="py function">
+<dt class="sig sig-object py" id="pycbc.frame.frame.datafind_connection">
+<span class="sig-prename descclassname"><span class="pre">pycbc.frame.frame.</span></span><span class="sig-name descname"><span class="pre">datafind_connection</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">server</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pycbc/frame/frame.html#datafind_connection"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pycbc.frame.frame.datafind_connection" title="Permalink to this definition">¶</a></dt>
+<dd><p>Return a connection to the datafind server</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>server</strong> (<em>{SERVER:PORT</em><em>, </em><em>string}</em><em>, </em><em>optional</em>) – A string representation of the server and port.
+The port may be ommitted.</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>The open connection to the datafind server.</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>connection</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="pycbc.frame.frame.frame_paths">
+<span class="sig-prename descclassname"><span class="pre">pycbc.frame.frame.</span></span><span class="sig-name descname"><span class="pre">frame_paths</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">frame_type</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">start_time</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">end_time</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">server</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">url_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'file'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pycbc/frame/frame.html#frame_paths"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pycbc.frame.frame.frame_paths" title="Permalink to this definition">¶</a></dt>
+<dd><p>Return the paths to a span of frame files</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>frame_type</strong> (<em>string</em>) – The string representation of the frame type (ex. ‘H1_ER_C00_L1’)</p></li>
+<li><p><strong>start_time</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.11)"><em>int</em></a>) – The start time that we need the frames to span.</p></li>
+<li><p><strong>end_time</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.11)"><em>int</em></a>) – The end time that we need the frames to span.</p></li>
+<li><p><strong>server</strong> (<em>{None</em><em>, </em><em>SERVER:PORT string}</em><em>, </em><em>optional</em>) – Optional string to specify the datafind server to use. By default an
+attempt is made to use a local datafind server.</p></li>
+<li><p><strong>url_type</strong> (<em>string</em>) – Returns only frame URLs with a particular scheme or head such
+as “file” or “gsiftp”. Default is “file”, which queries locally
+stored frames. Option can be disabled if set to None.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><strong>paths</strong> – The list of paths to the frame files.</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.11)">list</a> of paths</p>
+</dd>
+</dl>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">paths</span> <span class="o">=</span> <span class="n">frame_paths</span><span class="p">(</span><span class="s1">&#39;H1_LDAS_C02_L2&#39;</span><span class="p">,</span> <span class="mi">968995968</span><span class="p">,</span> <span class="mi">968995968</span><span class="o">+</span><span class="mi">2048</span><span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="pycbc.frame.frame.query_and_read_frame">
+<span class="sig-prename descclassname"><span class="pre">pycbc.frame.frame.</span></span><span class="sig-name descname"><span class="pre">query_and_read_frame</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">frame_type</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">channels</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">start_time</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">end_time</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sieve</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">check_integrity</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pycbc/frame/frame.html#query_and_read_frame"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pycbc.frame.frame.query_and_read_frame" title="Permalink to this definition">¶</a></dt>
+<dd><p>Read time series from frame data.</p>
+<p>Query for the locatin of physical frames matching the frame type. Return
+a time series containing the channel between the given start and end times.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>frame_type</strong> (<em>string</em>) – The type of frame file that we are looking for.</p></li>
+<li><p><strong>channels</strong> (<em>string</em><em> or </em><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.11)"><em>list</em></a><em> of </em><em>strings</em>) – Either a string that contains the channel name or a list of channel
+name strings.</p></li>
+<li><p><strong>start_time</strong> (<em>LIGOTimeGPS</em><em> or </em><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.11)"><em>int</em></a>) – The gps start time of the time series. Defaults to reading from the
+beginning of the available frame(s).</p></li>
+<li><p><strong>end_time</strong> (<em>LIGOTimeGPS</em><em> or </em><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.11)"><em>int</em></a>) – The gps end time of the time series. Defaults to the end of the frame.</p></li>
+<li><p><strong>sieve</strong> (<em>string</em><em>, </em><em>optional</em>) – Selects only frames where the frame URL matches the regular
+expression sieve</p></li>
+<li><p><strong>check_integrity</strong> (<em>boolean</em>) – Do an expensive checksum of the file before returning.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><strong>Frame Data</strong> – A TimeSeries or a list of TimeSeries, corresponding to the data from
+the frame file/cache for a given channel or channels.</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p><a class="reference internal" href="pycbc.types.html#pycbc.types.timeseries.TimeSeries" title="pycbc.types.timeseries.TimeSeries">TimeSeries</a> or <a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.11)">list</a> of <a class="reference internal" href="pycbc.types.html#pycbc.types.timeseries.TimeSeries" title="pycbc.types.timeseries.TimeSeries">TimeSeries</a></p>
+</dd>
+</dl>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">ts</span> <span class="o">=</span> <span class="n">query_and_read_frame</span><span class="p">(</span><span class="s1">&#39;H1_LDAS_C02_L2&#39;</span><span class="p">,</span> <span class="s1">&#39;H1:LDAS-STRAIN&#39;</span><span class="p">,</span>
+<span class="gp">&gt;&gt;&gt; </span>                              <span class="mi">968995968</span><span class="p">,</span> <span class="mi">968995968</span><span class="o">+</span><span class="mi">2048</span><span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="pycbc.frame.frame.read_frame">
+<span class="sig-prename descclassname"><span class="pre">pycbc.frame.frame.</span></span><span class="sig-name descname"><span class="pre">read_frame</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">location</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">channels</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">start_time</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">end_time</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">duration</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">check_integrity</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sieve</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pycbc/frame/frame.html#read_frame"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pycbc.frame.frame.read_frame" title="Permalink to this definition">¶</a></dt>
+<dd><p>Read time series from frame data.</p>
+<p>Using the <cite>location</cite>, which can either be a frame file “.gwf” or a
+frame cache “.gwf”, read in the data for the given channel(s) and output
+as a TimeSeries or list of TimeSeries.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>location</strong> (<em>string</em>) – A source of gravitational wave frames. Either a frame filename
+(can include pattern), a list of frame files, or frame cache file.</p></li>
+<li><p><strong>channels</strong> (<em>string</em><em> or </em><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.11)"><em>list</em></a><em> of </em><em>strings</em>) – Either a string that contains the channel name or a list of channel
+name strings.</p></li>
+<li><p><strong>start_time</strong> (<em>{None</em><em>, </em><em>LIGOTimeGPS}</em><em>, </em><em>optional</em>) – The gps start time of the time series. Defaults to reading from the
+beginning of the available frame(s).</p></li>
+<li><p><strong>end_time</strong> (<em>{None</em><em>, </em><em>LIGOTimeGPS}</em><em>, </em><em>optional</em>) – The gps end time of the time series. Defaults to the end of the frame.
+Note, this argument is incompatible with <cite>duration</cite>.</p></li>
+<li><p><strong>duration</strong> (<em>{None</em><em>, </em><em>float}</em><em>, </em><em>optional</em>) – The amount of data to read in seconds. Note, this argument is
+incompatible with <cite>end</cite>.</p></li>
+<li><p><strong>check_integrity</strong> (<em>{True</em><em>, </em><em>bool}</em><em>, </em><em>optional</em>) – Test the frame files for internal integrity.</p></li>
+<li><p><strong>sieve</strong> (<em>string</em><em>, </em><em>optional</em>) – Selects only frames where the frame URL matches the regular
+expression sieve</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><strong>Frame Data</strong> – A TimeSeries or a list of TimeSeries, corresponding to the data from
+the frame file/cache for a given channel or channels.</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p><a class="reference internal" href="pycbc.types.html#pycbc.types.timeseries.TimeSeries" title="pycbc.types.timeseries.TimeSeries">TimeSeries</a> or <a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.11)">list</a> of <a class="reference internal" href="pycbc.types.html#pycbc.types.timeseries.TimeSeries" title="pycbc.types.timeseries.TimeSeries">TimeSeries</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+<section id="module-pycbc.frame.losc">
+<span id="pycbc-frame-losc-module"></span><h2>pycbc.frame.losc module<a class="headerlink" href="#module-pycbc.frame.losc" title="Permalink to this heading">¶</a></h2>
+<p>This modules contains functions for getting data from the LOSC</p>
+<dl class="py function">
+<dt class="sig sig-object py" id="pycbc.frame.losc.get_run">
+<span class="sig-prename descclassname"><span class="pre">pycbc.frame.losc.</span></span><span class="sig-name descname"><span class="pre">get_run</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">time</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ifo</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pycbc/frame/losc.html#get_run"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pycbc.frame.losc.get_run" title="Permalink to this definition">¶</a></dt>
+<dd><p>Return the run name for a given time</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>time</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.11)"><em>int</em></a>) – The gps time</p></li>
+<li><p><strong>ifo</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.11)"><em>str</em></a>) – The ifo prefix string. Optional and normally unused,
+except for some special times where data releases
+were made for a single detector under
+unusual circumstances. For example, to get the data around GW170608
+in the Hanford detector.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="pycbc.frame.losc.losc_frame_json">
+<span class="sig-prename descclassname"><span class="pre">pycbc.frame.losc.</span></span><span class="sig-name descname"><span class="pre">losc_frame_json</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">ifo</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">start_time</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">end_time</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pycbc/frame/losc.html#losc_frame_json"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pycbc.frame.losc.losc_frame_json" title="Permalink to this definition">¶</a></dt>
+<dd><p>Get the information about the public data files in a duration of time</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>ifo</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.11)"><em>str</em></a>) – The name of the IFO to find the information about.</p></li>
+<li><p><strong>start_time</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.11)"><em>int</em></a>) – The gps time in GPS seconds</p></li>
+<li><p><strong>end_time</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.11)"><em>int</em></a>) – The end time in GPS seconds</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><strong>info</strong> – A dictionary containing information about the files that span the
+requested times.</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.11)">dict</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="pycbc.frame.losc.losc_frame_urls">
+<span class="sig-prename descclassname"><span class="pre">pycbc.frame.losc.</span></span><span class="sig-name descname"><span class="pre">losc_frame_urls</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">ifo</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">start_time</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">end_time</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pycbc/frame/losc.html#losc_frame_urls"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pycbc.frame.losc.losc_frame_urls" title="Permalink to this definition">¶</a></dt>
+<dd><p>Get a list of urls to losc frame files</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>ifo</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.11)"><em>str</em></a>) – The name of the IFO to find the information about.</p></li>
+<li><p><strong>start_time</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.11)"><em>int</em></a>) – The gps time in GPS seconds</p></li>
+<li><p><strong>end_time</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.11)"><em>int</em></a>) – The end time in GPS seconds</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><strong>frame_files</strong> – A dictionary containing information about the files that span the
+requested times.</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.11)">list</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="pycbc.frame.losc.read_frame_losc">
+<span class="sig-prename descclassname"><span class="pre">pycbc.frame.losc.</span></span><span class="sig-name descname"><span class="pre">read_frame_losc</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">channels</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">start_time</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">end_time</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pycbc/frame/losc.html#read_frame_losc"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pycbc.frame.losc.read_frame_losc" title="Permalink to this definition">¶</a></dt>
+<dd><p>Read channels from losc data</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>channels</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.11)"><em>str</em></a><em> or </em><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.11)"><em>list</em></a>) – The channel name to read or list of channel names.</p></li>
+<li><p><strong>start_time</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.11)"><em>int</em></a>) – The gps time in GPS seconds</p></li>
+<li><p><strong>end_time</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.11)"><em>int</em></a>) – The end time in GPS seconds</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><strong>ts</strong> – Returns a timeseries or list of timeseries with the requested data.</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p><a class="reference internal" href="pycbc.types.html#pycbc.types.timeseries.TimeSeries" title="pycbc.types.timeseries.TimeSeries">TimeSeries</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="pycbc.frame.losc.read_strain_losc">
+<span class="sig-prename descclassname"><span class="pre">pycbc.frame.losc.</span></span><span class="sig-name descname"><span class="pre">read_strain_losc</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">ifo</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">start_time</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">end_time</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pycbc/frame/losc.html#read_strain_losc"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pycbc.frame.losc.read_strain_losc" title="Permalink to this definition">¶</a></dt>
+<dd><p>Get the strain data from the LOSC data</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>ifo</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.11)"><em>str</em></a>) – The name of the IFO to read data for. Ex. ‘H1’, ‘L1’, ‘V1’</p></li>
+<li><p><strong>start_time</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.11)"><em>int</em></a>) – The gps time in GPS seconds</p></li>
+<li><p><strong>end_time</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.11)"><em>int</em></a>) – The end time in GPS seconds</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><strong>ts</strong> – Returns a timeseries with the strain data.</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p><a class="reference internal" href="pycbc.types.html#pycbc.types.timeseries.TimeSeries" title="pycbc.types.timeseries.TimeSeries">TimeSeries</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+<section id="module-pycbc.frame.store">
+<span id="pycbc-frame-store-module"></span><h2>pycbc.frame.store module<a class="headerlink" href="#module-pycbc.frame.store" title="Permalink to this heading">¶</a></h2>
+<p>This modules contains functions for reading in data from hdf stores</p>
+<dl class="py function">
+<dt class="sig sig-object py" id="pycbc.frame.store.read_store">
+<span class="sig-prename descclassname"><span class="pre">pycbc.frame.store.</span></span><span class="sig-name descname"><span class="pre">read_store</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fname</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">channel</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">start_time</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">end_time</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pycbc/frame/store.html#read_store"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pycbc.frame.store.read_store" title="Permalink to this definition">¶</a></dt>
+<dd><p>Read time series data from hdf store</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>fname</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.11)"><em>str</em></a>) – Name of hdf store file</p></li>
+<li><p><strong>channel</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.11)"><em>str</em></a>) – Channel name to read</p></li>
+<li><p><strong>start_time</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.11)"><em>int</em></a>) – GPS time to start reading from</p></li>
+<li><p><strong>end_time</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.11)"><em>int</em></a>) – GPS time to end time series</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><strong>ts</strong> – Time series containing the requested data</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>pycbc.types.TimeSeries</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+<section id="module-pycbc.frame">
+<span id="module-contents"></span><h2>Module contents<a class="headerlink" href="#module-pycbc.frame" title="Permalink to this heading">¶</a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="pycbc.frame.flag_names_to_bitmask">
+<span class="sig-prename descclassname"><span class="pre">pycbc.frame.</span></span><span class="sig-name descname"><span class="pre">flag_names_to_bitmask</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">flags</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pycbc/frame.html#flag_names_to_bitmask"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pycbc.frame.flag_names_to_bitmask" title="Permalink to this definition">¶</a></dt>
+<dd><p>Takes a list of flag names corresponding to bits in a status channel
+and returns the corresponding bit mask.</p>
+</dd></dl>
+
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="pycbc.filter.html" class="btn btn-neutral float-left" title="pycbc.filter package" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="pycbc.inference.html" class="btn btn-neutral float-right" title="pycbc.inference package" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2015, 2016, 2017, Alexander Nitz, Ian Harry, Christopher M. Biwer, Duncan A.  Brown, Josh Willis, and Tito Dal Canton.
+      <span class="lastupdated">Last updated on Nov 04, 2022.
+      </span></p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

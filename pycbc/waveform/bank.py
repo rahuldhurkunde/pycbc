@@ -41,6 +41,8 @@ import pycbc.io
 from pycbc.io.ligolw import LIGOLWContentHandler
 import hashlib
 import warnings
+import lal
+import lalsimulation as lalsim
 
 
 def sigma_cached(self, psd):
@@ -996,7 +998,562 @@ class FilterBankSkyMax(TemplateBank):
         return hplus, hcross
 
 
+class FilterBankTHA(TemplateBank):
+    def __init__(self, filename, filter_length, delta_f,
+                 dtype, out_comp1=None, out_comp2=None,
+                 out_comp3=None, out_comp4=None, out_comp5=None,
+                 max_template_length=None, parameters=None,
+                 low_frequency_cutoff=None, max_num_comps=None, **kwds):
+        self.out_comp1 = out_comp1
+        self.out_comp2 = out_comp2
+        self.out_comp3 = out_comp3
+        self.out_comp4 = out_comp4
+        self.out_comp5 = out_comp5
+        self.dtype = dtype
+        self.f_lower = low_frequency_cutoff
+        self.filename = filename
+        self.delta_f = delta_f
+        self.N = (filter_length - 1 ) * 2
+        self.delta_t = 1.0 / (self.N * self.delta_f)
+        self.filter_length = filter_length
+        self.max_template_length = max_template_length
+        if max_num_comps is None:
+            max_num_comps = 5
+        self.max_num_comps = max_num_comps
+
+        super(FilterBankTHA, self).__init__(filename, parameters=parameters,
+              **kwds)
+
+        self.ensure_standard_filter_columns(low_frequency_cutoff=low_frequency_cutoff)
+
+        self.last_index = None
+
+    def get(self, index, psd):
+        if index == self.last_index:
+             need_new_comps = False
+        else:
+             need_new_comps = True
+        self.last_index = index
+        # Make new memory for templates if we aren't given output memory
+        if self.out_comp1 is None:
+            tempoutcomp1 = zeros(self.filter_length, dtype=self.dtype)
+        else:
+            tempoutcomp1 = self.out_comp1
+        if self.out_comp2 is None:
+            tempoutcomp2 = zeros(self.filter_length, dtype=self.dtype)
+        else:
+            tempoutcomp2 = self.out_comp2
+        if self.out_comp3 is None:
+            tempoutcomp3 = zeros(self.filter_length, dtype=self.dtype)
+        else:
+            tempoutcomp3 = self.out_comp3
+        if self.out_comp4 is None:
+            tempoutcomp4 = zeros(self.filter_length, dtype=self.dtype)
+        else:
+            tempoutcomp4 = self.out_comp4
+        if self.out_comp5 is None:
+            tempoutcomp5 = zeros(self.filter_length, dtype=self.dtype)
+        else:
+            tempoutcomp5 = self.out_comp5
+
+        approximant = self.approximant(index)
+        assert(approximant in ["IMRPhenomPv2", "IMRPhenomXP"])
+        if approximant == "IMRPhenomPv2":
+            _approx_cls = PhenomPv2Template
+        else:
+            _approx_cls = PhenomXPTemplate
+
+        # Get the end of the waveform if applicable (only for SPAtmplt atm)
+        f_end = self.end_frequency(index)
+        if f_end is None or f_end >= (self.filter_length * self.delta_f):
+            f_end = (self.filter_length-1) * self.delta_f
+
+        # Find the start frequency, if variable
+        f_low = self.f_lower
+        logging.info('%s: generating %s from %s Hz', index, approximant, f_low)
+
+        # What does this do???
+        poke1 = tempoutcomp1.data # pylint:disable=unused-variable
+        poke2 = tempoutcomp2.data # pylint:disable=unused-variable
+        poke3 = tempoutcomp3.data # pylint:disable=unused-variable
+        poke4 = tempoutcomp4.data # pylint:disable=unused-variable
+        poke5 = tempoutcomp5.data # pylint:disable=unused-variable
+
+        # Clear the storage memory
+        tempoutcomp1.clear()
+        tempoutcomp2.clear()
+        tempoutcomp3.clear()
+        tempoutcomp4.clear()
+        tempoutcomp5.clear()
+
+        # Get the waveform filter
+        distance = 1.0 / DYN_RANGE_FAC
+        if need_new_comps:
+            curr_tmp = _approx_cls(self.table[index], 1./self.delta_t,
+                                      self.f_lower)
+            self.curr_tmp = curr_tmp
+        else:
+            curr_tmp = self.curr_tmp
+        num_comps = min(self.table["num_comps"][index], self.max_num_comps)
+        hcomps = curr_tmp.get_whitened_normalized_comps(self.delta_f, psd,
+                                                        num_comps=num_comps)
+
+        tempoutcomp1.data[:] = hcomps[0].data[:]
+        if hasattr(hcomps[0], 'chirp_length') and \
+                hcomps[0].chirp_length is not None:
+            self.table[index].template_duration = hcomps[0].chirp_length
+        hcomps[0] = hcomps[0].astype(self.dtype)
+        hcomps[0].f_lower = f_low
+        hcomps[0].min_f_lower = f_low
+        hcomps[0].end_frequency = f_end
+        hcomps[0].end_idx = int(hcomps[0].end_frequency / hcomps[0].delta_f)
+        hcomps[0].params = self.table[index]
+        hcomps[0].approximant = approximant
+
+        if hcomps[1] is not None:
+            tempoutcomp2.data[:] = hcomps[1].data[:]
+            hcomps[1] = hcomps[1].astype(self.dtype)
+            hcomps[1].f_lower = f_low
+            hcomps[1].min_f_lower = f_low
+            hcomps[1].end_frequency = f_end
+            hcomps[1].end_idx = int(hcomps[0].end_frequency / hcomps[0].delta_f)
+            hcomps[1].params = self.table[index]
+            hcomps[1].approximant = approximant
+
+        if hcomps[2] is not None:
+            tempoutcomp3.data[:] = hcomps[2].data[:]
+            hcomps[2] = hcomps[2].astype(self.dtype)
+            hcomps[2].f_lower = f_low
+            hcomps[2].min_f_lower = f_low
+            hcomps[2].end_frequency = f_end
+            hcomps[2].end_idx = int(hcomps[0].end_frequency / hcomps[0].delta_f)
+            hcomps[2].params = self.table[index]
+            hcomps[2].approximant = approximant
+
+        if hcomps[3] is not None:
+            tempoutcomp4.data[:] = hcomps[3].data[:]
+            hcomps[3] = hcomps[3].astype(self.dtype)
+            hcomps[3].f_lower = f_low
+            hcomps[3].min_f_lower = f_low
+            hcomps[3].end_frequency = f_end
+            hcomps[3].end_idx = int(hcomps[0].end_frequency / hcomps[0].delta_f)
+            hcomps[3].params = self.table[index]
+            hcomps[3].approximant = approximant
+
+        if hcomps[4] is not None:
+            tempoutcomp5.data[:] = hcomps[4].data[:]
+            hcomps[4] = hcomps[4].astype(self.dtype)
+            hcomps[4].f_lower = f_low
+            hcomps[4].min_f_lower = f_low
+            hcomps[4].end_frequency = f_end
+            hcomps[4].end_idx = int(hcomps[0].end_frequency / hcomps[0].delta_f)
+            hcomps[4].params = self.table[index]
+            hcomps[4].approximant = approximant
+
+        return hcomps
+
+def _dpsi(theta_jn, phi_jl, beta):
+    """Calculate the difference between the polarization with respect to the
+    total angular momentum and the polarization with respect to the orbital
+    angular momentum using code from
+    https://git.ligo.org/lscsoft/pesummary/-/blob/master/pesummary/gw/conversions/angles.py#L13
+    """
+    if theta_jn == 0:
+        return -1. * phi_jl
+    n = np.array([np.sin(theta_jn), 0, np.cos(theta_jn)])
+    j = np.array([0, 0, 1])
+    l = np.array([
+        np.sin(beta) * np.sin(phi_jl), np.sin(beta) * np.cos(phi_jl), np.cos(beta)
+    ])
+    p_j = np.cross(n, j)
+    p_j /= np.linalg.norm(p_j)
+    p_l = np.cross(n, l)
+    p_l /= np.linalg.norm(p_l)
+    cosine = np.inner(p_j, p_l)
+    sine = np.inner(n, np.cross(p_j, p_l))
+    dpsi = np.pi / 2 + np.sign(sine) * np.arccos(cosine)
+    return dpsi
+
+def _dphi(theta_jn, phi_jl, beta):
+    """Calculate the difference in the phase angle between J-aligned
+    and L-aligned frames using code from
+    https://git.ligo.org/lscsoft/pesummary/-/blob/master/pesummary/gw/conversions/angles.py#L36
+
+    Parameters
+    ----------
+    theta_jn: np.ndarray
+        the angle between J and line of sight
+    phi_jl: np.ndarray
+        the precession phase
+    beta: np.ndarray
+        the opening angle (angle between J and L)
+    """
+    theta_jn = np.array([theta_jn])
+    phi_jl = np.array([phi_jl])
+    beta = np.array([beta])
+    n = np.column_stack(
+        [np.repeat([0], len(theta_jn)), np.sin(theta_jn), np.cos(theta_jn)]
+    )
+    l = np.column_stack(
+        [
+            np.sin(beta) * np.cos(phi_jl), np.sin(beta) * np.sin(phi_jl),
+            np.cos(beta)
+        ]
+    )
+    cosi = [np.inner(nn, ll) for nn, ll in zip(n, l)]
+    inc = np.arccos(cosi)
+    sign = np.sign(np.cos(theta_jn) - (np.cos(beta) * np.cos(inc)))
+    cos_d = np.cos(phi_jl) * np.sin(theta_jn) / np.sin(inc)
+    inds = np.logical_or(cos_d < -1, cos_d > 1)
+    cos_d[inds] = np.sign(cos_d[inds]) * 1.
+    dphi = -1. * sign * np.arccos(cos_d)
+    return dphi[0]
+
+def compute_beta(tmplt):
+    """ Calculate beta (thetaJL) using code from
+    https://lscsoft.docs.ligo.org/lalsuite/lalsimulation/_l_a_l_sim_inspiral_8c_source.html#l06105
+    """
+    m1 = tmplt.mass1
+    m2 = tmplt.mass2
+    s1x = tmplt.spin1x
+    s1y = tmplt.spin1y
+    s1z = tmplt.spin1z
+    s2x = tmplt.spin2x
+    s2y = tmplt.spin2y
+    s2z = tmplt.spin2z
+    flow = tmplt.flow
+
+    eta = m1 * m2 / (m1 + m2) / (m1 + m2);
+    v0 = ((m1 + m2) * lal.MTSUN_SI * lal.PI * flow) ** (1. / 3.)
+
+    lmag = (m1 + m2) * (m1 + m2) * eta / v0
+    lmag *= (1.0 + v0 * v0 * (1.5 + eta / 6.))
+
+    s1x = m1 * m1 * s1x
+    s1y = m1 * m1 * s1y
+    s1z = m1 * m1 * s1z
+    s2x = m2 * m2 * s2x
+    s2y = m2 * m2 * s2y
+    s2z = m2 * m2 * s2z
+    jx = s1x + s2x
+    jy = s1y + s2y
+    jz = lmag + s1z + s2z
+
+    jnorm = (jx * jx + jy * jy + jz * jz) ** (1. / 2.)
+    jhatz = jz / jnorm
+
+    return np.arccos(jhatz)
+
+class _PhenomTemplate():
+
+    def __init__(self, template_params, sample_rate, f_lower):
+        from pycbc.pnutils import get_imr_duration
+        self.flow = float(f_lower)
+        self.f_final = float(sample_rate / 2.)
+
+        self.mass1 = float(template_params.mass1)
+        self.mass2 = float(template_params.mass2)
+        self.spin1x = float(template_params.spin1x)
+        self.spin1y = float(template_params.spin1y)
+        self.spin1z = float(template_params.spin1z)
+        self.spin2x = float(template_params.spin2x)
+        self.spin2y = float(template_params.spin2y)
+        self.spin2z = float(template_params.spin2z)
+
+        self.theta = float(template_params.latitude)
+        self.phi = float(template_params.longitude)
+        self.iota = float(template_params.inclination)
+        self.psi = float(template_params.polarization)
+        self.orb_phase = float(template_params.orbital_phase)
+        self.fref = self.flow
+        self.reverse_flag = int(template_params.reverse_flag)
+
+        self.duration = get_imr_duration(self.mass1, self.mass2, self.spin1z,
+                                         self.spin2z, self.flow, "IMRPhenomD")
+
+        outs = self._model_parameters_from_source_frame(
+            self.mass1*lal.MSUN_SI,
+            self.mass2*lal.MSUN_SI,
+            self.flow,
+            self.orb_phase,
+            self.iota,
+            self.spin1x,
+            self.spin1y,
+            self.spin1z,
+            self.spin2x,
+            self.spin2y,
+            self.spin2z,
+        )
+        chi1_l, chi2_l, chip, thetaJN, alpha0, phi_aligned, zeta_polariz = outs
+
+        self.chi1_l = float(chi1_l)
+        self.chi2_l = float(chi2_l)
+        self.chip = float(chip)
+        self.thetaJN = float(thetaJN)
+        self.alpha0 = float(alpha0)
+        self.phi0 = float(phi_aligned)
+        # This is a correction on psi, currently unused
+        self.psi_corr = zeta_polariz
+        self.beta = compute_beta(self)
+
+        self.comps = {}
+        self.has_comps = False
+
+    def gen_hp_hc(self, thetaJN, alpha0, phi0, df, f_final):
+        # calculate cartesian spins for waveform generator
+        a1 = np.sqrt(
+            np.sum(np.square([self.spin1x, self.spin1y, self.spin1z]))
+        )
+        a2 = np.sqrt(
+            np.sum(np.square([self.spin2x, self.spin2y, self.spin2z]))
+        )
+        phi1 = np.fmod(
+            2 * np.pi + np.arctan2(self.spin1y, self.spin1x),
+            2 * np.pi
+        )
+        phi2 = np.fmod(
+            2 * np.pi + np.arctan2(self.spin2y, self.spin2x),
+            2 * np.pi
+        )
+        phi12 = phi2 - phi1
+        if phi12 < 0:
+            phi12 += 2 * np.pi
+        # prevent failure when s1z = a1 = 0
+        if not self.spin1z and not a1:
+            tilt1 = 0.
+        else:
+            tilt1 = np.arccos(self.spin1z / a1)
+        if not self.spin2z and not a2:
+            tilt2 = 0.
+        else:
+            tilt2 = np.arccos(self.spin2z / a2)
+        iota, spin1x, spin1y, spin1z, spin2x, spin2y, spin2z = \
+            lalsim.SimInspiralTransformPrecessingNewInitialConditions(
+                thetaJN, alpha0, tilt1, tilt2, phi12, a1, a2,
+                self.mass1*lal.MSUN_SI, self.mass2*lal.MSUN_SI, self.fref, phi0
+            )
+        LALparams = lal.CreateDict()
+        # The flags below change the euler angles to Spin-Taylor
+        if self.flag == True:
+            lalsim.SimInspiralWaveformParamsInsertPhenomXPrecVersion(LALparams, 320)
+            lalsim.SimInspiralWaveformParamsInsertPhenomXPFinalSpinMod(LALparams, 2)
+
+        # generate hp, hc for given orientation with lalsimulation
+        return lalsim.SimInspiralFD(
+            self.mass1*lal.MSUN_SI, self.mass2*lal.MSUN_SI, spin1x, spin1y,
+            spin1z, spin2x, spin2y, spin2z, 1.e6*lal.PC_SI, iota, phi0,
+            0, 0, 0, df, self.flow, f_final, self.fref, LALparams,
+            lalsim.GetApproximantFromString(self.approximant)
+        )
+
+    def gen_harmonics_comp(self, thetaJN, alpha0, phi0, psi, df, f_final):
+        # generate hp, hc
+        hp, hc = self.gen_hp_hc(thetaJN, alpha0, phi0, df, f_final)
+        # 1908.05707 defines psi in J-aligned frame. Need to rotate to
+        # L-aligned frame and multiply by w+, wx
+        dpsi = _dpsi(thetaJN, alpha0, self.beta)
+        fp = np.cos(2 * (psi - dpsi))
+        fc = -1. * np.sin(2 * (psi - dpsi))
+        h = (fp * hp.data.data[:] + fc * hc.data.data[:])
+        # 1908.05707 defines phi in J-aligned frame. Need to rotate to
+        # L-aligned frame
+        h *= np.exp(2j * _dphi(thetaJN, alpha0, self.beta))
+        # create LAL frequency array and return precessing harmonic
+        new = lal.CreateCOMPLEX16FrequencySeries(
+            "", lal.LIGOTimeGPS(hp.epoch), 0, df, lal.SecondUnit, len(h)
+        )
+        new.data.data[:] = h[:]
+        return new
+
+    def get_interpolated_harmonic_comp(
+        self, thetaJN, alpha0, phi0, psi, df, f_final
+    ):
+        # Waveform generation is a problem.
+        # Compressed waveforms would be an option, but the file size will be
+        # challenging. I'm trying out the idea of "INTERP" waveforms instead,
+        # where we generate waveforms at much larger frequency spacing and then
+        # upsample. (Technically these don't actually interpolate, but it's a
+        # good way to explain the idea of what it's doing ..).
+        from pycbc.filter import interpolate_complex_frequency
+
+        def rulog2(val):
+            return 2.0 ** np.ceil(np.log2(float(val)))
+
+
+        # FIXME: THIS ONE IS IMPORTANT!!
+        extra_padding = 5
+        df_min = 1.0 / rulog2(self.duration + extra_padding)
+
+        small = self.gen_harmonics_comp(
+            thetaJN, alpha0, phi0, psi, df_min, f_final
+        )
+
+        offset = int(extra_padding * (small.data.length-1)*2 * small.deltaF)
+
+        small = FrequencySeries(small.data.data[:], delta_f=small.deltaF,
+                                epoch=small.epoch)
+
+        large = interpolate_complex_frequency(small, df, zeros_offset=offset,
+                                              side='left')
+        return large
+
+    def compute_waveform_five_comps(self, df, f_final, num_comps=5, interp=True):
+        if interp:
+            def _func(*args, **kwargs):
+                return self.get_interpolated_harmonic_comp(*args, **kwargs)
+        else:
+            def _func(*args, **kwargs):
+                h = self.gen_harmonics_comp(*args, **kwargs)
+                return FrequencySeries(h.data.data[:], delta_f=h.deltaF, epoch=h.epoch)
+        # calculate 5 harmonic decomposition as defined in 1908.05707
+        hgen1a = _func(0., 0., 0., 0., df, f_final)
+        hgen1b = _func(0., 0., np.pi/4., np.pi/4, df, f_final)
+        tmp = hgen1a - hgen1b
+        hgen1b = (hgen1a + hgen1b) / 2.
+        hgen1a = tmp / 2.
+        h1 = hgen1a
+
+        if num_comps == 1:
+            return h1, None, None, None, None
+
+
+        # These are both negative w.r.t 1908.05707
+        hgen2a = _func(np.pi/2., 0., np.pi/4., np.pi/4, df, f_final)
+        hgen2b = _func(np.pi/2., np.pi/2., 0., np.pi/4, df, f_final)
+        tmp = hgen2a + hgen2b
+        hgen2b = -0.25 * (hgen2a - hgen2b)
+        hgen2a = -0.25 * tmp
+        h2 = hgen2a
+
+        if num_comps == 2:
+            return h1, h2, None, None, None
+
+        hgen3a = _func(np.pi/2., 0., 0., 0., df, f_final)
+        hgen3b = _func(np.pi/2., np.pi/2., 0., 0., df, f_final)
+        hgen3a = 1./6. * (hgen3a + hgen3b)
+        h3 = hgen3a
+
+        if num_comps == 3:
+            return h1, h2, h3, None, None
+
+        h4 = hgen2b
+
+        if num_comps == 4:
+            return h1, h2, h3, h4, None
+
+        h5 = hgen1b
+
+        return h1, h2, h3, h4, h5
+
+    def wn_cython(self, hs, ASD, flen, df, kmin, kmax):
+        from pycbc.types.array_cpu import whiten_and_normalize_three
+        from pycbc.types.array_cpu import whiten_and_normalize_two
+        from pycbc.types.array_cpu import whiten_and_normalize_one
+        if len(hs) == 3:
+            whiten_and_normalize_three(hs[0].data, hs[1].data, hs[2].data,
+                                       ASD.data, flen, df, kmin, kmax)
+        elif len(hs) == 2:
+            whiten_and_normalize_two(hs[0].data, hs[1].data,
+                                     ASD.data, flen, df, kmin, kmax)
+        elif len(hs) == 1:
+            whiten_and_normalize_one(hs[0].data, ASD.data, flen, df, kmin, kmax)
+
+
+    def whiten_and_normalize(self, hs, ASD, flen, df, kmin, kmax):
+        if len(hs) in [3,2,1]:
+            self.wn_cython(hs, ASD, flen, df, kmin, kmax)
+            return
+        raise NotImplementedError()
+
+    def orthogonalize(self, hs, df):
+        from pycbc.types.array_cpu import tha_orthogonalize_vecs
+        for i in range(len(hs)):
+            for j in range(i + 1, len(hs)):
+                tha_orthogonalize_vecs(hs[i].data, hs[j].data, df, len(hs[i]))
+
+    def get_whitened_normalized_comps(self, df, psd, num_comps=5):
+        """
+        Return a FrequencySeries of h+ and hx, whitened by the
+        given ASD and normalized. The waveform is not zero-padded to
+        match the length of the ASD, so its normalization depends on
+        its own length.
+        """
+        # Generate a new wf
+        if not self.has_comps:
+            ##Generating five harmonics, then manually assigned the rest to None after reversing!!! Hard-coded
+            h1, h2, h3, h4, h5 = self.compute_waveform_five_comps(df, self.f_final, num_comps=5)
+            waveforms = [h1, h2, h3, h4, h5]
+
+            if self.reverse_flag == 1:
+                waveforms.reverse()
+
+            for i in range(num_comps, 5):
+                waveforms[i] = None
+
+            self.h1, self.h2, self.h3, self.h4, self.h5 = waveforms
+            self.has_comps = True
+
+        else:
+            pass
+
+        # Regardless of whether newly computed or reused,
+        # make local aliases for convenience:
+        h1, h2, h3, h4, h5 = self.h1, self.h2, self.h3, self.h4, self.h5
+
+        hs = [h1.copy()]
+        if h2 is not None:
+            hs += [h2.copy()]
+        if h3 is not None:
+            hs += [h3.copy()]
+        if h4 is not None:
+            hs += [h4.copy()]
+        if h5 is not None:
+            hs += [h5.copy()]
+
+        flen = len(h1)
+        ASD = psd ** 0.5
+        kmin = int(self.flow / df)
+        kmax = int(self.f_final / df)
+
+        if len(h1) > len(ASD):
+            err_msg = "waveform has length greater than ASD; cannot whiten"
+            raise ValueError(err_msg)
+
+        orthogonal = []
+
+        # Whiten and Normalize
+        self.whiten_and_normalize(hs, ASD, flen, df, kmin, kmax)
+
+        # Orthogonalize
+        self.orthogonalize(hs, df)
+
+        for i in range(len(hs)):
+            orthogonal += [hs[i]]
+
+        orthogonal += [None] * (5 - len(hs))
+
+        return orthogonal
+
+class PhenomPv2Template(_PhenomTemplate):
+    approximant = "IMRPhenomPv2"
+
+    def _model_parameters_from_source_frame(self, *args):
+        return lalsim.SimIMRPhenomPCalculateModelParametersFromSourceFrame(
+            *args, lalsim.IMRPhenomPv2_V
+        )
+
+class PhenomXPTemplate(_PhenomTemplate):
+    approximant = "IMRPhenomXP"
+    # Enable flags to change Euler angles: Default flag on to Spin-Taylor
+    flag = True
+
+    def _model_parameters_from_source_frame(self, *args):
+        return lalsim.SimIMRPhenomXPCalculateModelParametersFromSourceFrame(
+            *args, None
+        )
+
 __all__ = ('sigma_cached', 'boolargs_from_apprxstr', 'add_approximant_arg',
            'parse_approximant_arg', 'tuple_to_hash', 'TemplateBank',
            'LiveFilterBank', 'FilterBank', 'find_variable_start_frequency',
-           'FilterBankSkyMax')
+           'FilterBankSkyMax', 'FilterBankTHA')
+

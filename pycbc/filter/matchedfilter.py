@@ -992,6 +992,164 @@ class MatchedFilterSkyMaxControlNoPhase(MatchedFilterSkyMaxControl):
         return compute_u_val_for_sky_loc_stat_no_phase(hplus, hcross, hphccorr,
                                                        **kwargs)
 
+
+class MatchedFilterTHAControl(object):
+    def __init__(self, low_frequency_cutoff, high_frequency_cutoff,
+                 snr_threshold, tlen, delta_f, dtype, segment_list,
+                 template_output1, template_output2, template_output3,
+                 template_output4, template_output5):
+        """ Create a matched filter engine.
+
+        Parameters
+        ----------
+        low_frequency_cutoff : {None, float}, optional
+            The frequency to begin the filter calculation. If None, begin at the
+            first frequency after DC.
+        high_frequency_cutoff : {None, float}, optional
+            The frequency to stop the filter calculation. If None, continue to the
+            the nyquist frequency.
+        snr_threshold : list
+            The minimum snr to return when filtering for each value of num_comps
+        segment_list : list
+            List of FrequencySeries that are the Fourier-transformed data segments
+        template_output : complex64
+            Array of memory given as the 'out' parameter to waveform.FilterBank
+        """
+        # Assuming analysis time is constant across templates and segments, also
+        # delta_f is constant across segments.
+        self.tlen = tlen
+        self.flen = self.tlen / 2 + 1
+        self.delta_f = delta_f
+        self.delta_t = 1.0/(self.delta_f * self.tlen)
+        self.dtype = dtype
+        self.snr_threshold = snr_threshold
+        self.flow = low_frequency_cutoff
+        self.fhigh = high_frequency_cutoff
+        self.segments = segment_list
+        self.hcomp1 = template_output1
+        self.hcomp2 = template_output2
+        self.hcomp3 = template_output3
+        self.hcomp4 = template_output4
+        self.hcomp5 = template_output5
+        self.hcomps = [self.hcomp1, self.hcomp2, self.hcomp3, self.hcomp4,
+                       self.hcomp5]
+
+        self.snr_mem = zeros(self.tlen, dtype=self.dtype)
+        self.snr_mem1 = zeros(self.tlen, dtype=self.dtype)
+        self.snr_mem2 = zeros(self.tlen, dtype=self.dtype)
+        self.snr_mem3 = zeros(self.tlen, dtype=self.dtype)
+        self.snr_mem4 = zeros(self.tlen, dtype=self.dtype)
+        self.snr_mem5 = zeros(self.tlen, dtype=self.dtype)
+        self.snr_mem_comps = [self.snr_mem1, self.snr_mem2, self.snr_mem3,
+                              self.snr_mem4, self.snr_mem5]
+
+        self.corr_mem1 = zeros(self.tlen, dtype=self.dtype)
+        self.corr_mem2 = zeros(self.tlen, dtype=self.dtype)
+        self.corr_mem3 = zeros(self.tlen, dtype=self.dtype)
+        self.corr_mem4 = zeros(self.tlen, dtype=self.dtype)
+        self.corr_mem5 = zeros(self.tlen, dtype=self.dtype)
+        self.corr_mem_comps = [self.corr_mem1, self.corr_mem2, self.corr_mem3,
+                               self.corr_mem4, self.corr_mem5]
+
+        self.matched_filter_and_cluster = self.tha_matched_filter_and_cluster
+        # setup the threasholding/clustering operations for each segment
+        self.threshold_and_clusterers = []
+        for seg in self.segments:
+            thresh = events.ThresholdCluster(self.snr_mem[seg.analyze])
+            thresh.mem_slice = seg.analyze
+            self.threshold_and_clusterers.append(thresh)
+
+        # Assuming analysis time is constant across templates and segments, also
+        # delta_f is constant across segments.
+        self.kmin, self.kmax = get_cutoff_indices(self.flow, self.fhigh,
+                                                  self.delta_f, self.tlen)
+
+        # Set up the correlation operations for each analysis segment
+        corr_slice = slice(self.kmin, self.kmax)
+        self.correlators = []
+        for seg in self.segments:
+            self.correlators.append([])
+            for i in range(5):
+                corr = Correlator(self.hcomps[i][corr_slice],
+                                  seg[corr_slice],
+                                  self.corr_mem_comps[i][corr_slice])
+                self.correlators[-1].append(corr)
+
+        # setup up the ifft we will do
+        self.iffts = []
+        for i in range(5):
+            self.iffts.append(IFFT(self.corr_mem_comps[i],
+                                  self.snr_mem_comps[i]))
+
+    def run_correlators(self, segnum, i):
+        self.correlators[segnum][i].correlate()
+
+    def tha_matched_filter_and_cluster(self, segnum, template_norm, window, epoch=None, num_comps=5):
+        """ Returns the complex snr timeseries, normalization of the complex snr,
+        the correlation vector frequency series, the list of indices of the
+        triggers, and the snr values at the trigger locations. Returns empty
+        lists for these for points that are not above the threshold.
+
+        Calculated the matched filter, threshold, and cluster.
+
+        Parameters
+        ----------
+        segnum : int
+            Index into the list of segments at MatchedFilterControl construction
+            against which to filter.
+        template_norm : float
+            The htilde, template normalization factor.
+        window : int
+            Size of the window over which to cluster triggers, in samples
+
+        Returns
+        -------
+        snr : TimeSeries
+            A time series containing the complex snr.
+        norm : float
+            The normalization of the complex snr.
+        corrrelation: FrequencySeries
+            A frequency series containing the correlation vector.
+        idx : Array
+            List of indices of the triggers.
+        snrv : Array
+            The snr values at the trigger locations.
+        """
+        from pycbc.types.array_cpu import squared_norm
+        logging.info("Using %d comps" % num_comps)
+        norm = (4.0 * self.delta_f)
+        for i in range(num_comps):
+            self.run_correlators(segnum, i)
+            self.iffts[i].execute()
+            if i == 0:
+                self.snr_mem.data[:] = squared_norm(self.snr_mem_comps[i])
+            else:
+                self.snr_mem.data[:] += squared_norm(self.snr_mem_comps[i])
+
+        self.snr_mem[:] = self.snr_mem[:]**0.5
+        thresh = self.snr_threshold[num_comps - 1]
+        snrv, idx = self.threshold_and_clusterers[segnum].threshold_and_cluster((thresh / norm), window)
+        #shifted_idxs = self.segments[segnum].analyze.start + idx
+        #self.snr_mem.data[shifted_idxs] = self.snr_mem.data[shifted_idxs]**0.5
+
+
+        if len(idx) == 0:
+            return [], [], [], [], [], []
+
+        logging.info("%s points above threshold" % str(len(idx)))
+
+        snr_full = TimeSeries(self.snr_mem, epoch=epoch, delta_t=self.delta_t, copy=False)
+        snrs = [
+            TimeSeries(self.snr_mem_comps[i], epoch=epoch, delta_t=self.delta_t, copy=False)
+            if i < num_comps else None for i in range(5)
+        ]
+        corrs = [
+            FrequencySeries(self.corr_mem_comps[i], delta_f=self.delta_f, copy=False)
+            if i < num_comps else None for i in range(5)
+        ]
+        return snr_full, norm, corrs, snrs, idx, snrv
+
+
 def make_frequency_series(vec):
     """Return a frequency series of the input vector.
 
@@ -1239,7 +1397,11 @@ def matched_filter_core(template, data, psd=None, low_frequency_cutoff=None,
     else:
         raise TypeError('Invalid Output Vector: wrong length or dtype')
 
-    correlate(htilde[kmin:kmax], stilde[kmin:kmax], qtilde[kmin:kmax])
+    def correlate_numpy(x, y, z):
+        z.data[:] = numpy.conjugate(x.data)[:]
+        z *= y
+
+    correlate_numpy(htilde[kmin:kmax], stilde[kmin:kmax], qtilde[kmin:kmax])
 
     if psd is not None:
         if isinstance(psd, FrequencySeries):
@@ -2206,6 +2368,7 @@ __all__ = ['match', 'optimized_match', 'matched_filter', 'sigmasq', 'sigma', 'ge
            'overlap_cplx', 'matched_filter_core', 'correlate',
            'MatchedFilterControl', 'LiveBatchMatchedFilter',
            'MatchedFilterSkyMaxControl', 'MatchedFilterSkyMaxControlNoPhase',
+           'MatchedFilterTHAControl',
            'compute_max_snr_over_sky_loc_stat_no_phase',
            'compute_max_snr_over_sky_loc_stat',
            'compute_followup_snr_series',

@@ -38,6 +38,8 @@ parser.add_argument('--statmap-file',
                     help="HDF format clustered coincident trigger result file")
 parser.add_argument('--single-detector-triggers', nargs='+', action=MultiDetOptionAction,
                     help="HDF format merged single detector trigger files")
+parser.add_argument('--psd-files', nargs='+', action=MultiDetOptionAction,
+                    help="Merged PSD files")
 parser.add_argument('--inspiral-segments',
                     help="xml segment files containing the inspiral analysis times")
 parser.add_argument('--inspiral-data-read-name',
@@ -79,6 +81,7 @@ coinc_file = resolve_url_to_file(os.path.abspath(args.statmap_file))
 insp_segs = resolve_url_to_file(os.path.abspath(args.inspiral_segments))
 
 single_triggers = []
+psd_files = []
 fsdt = {}
 insp_data_seglists = {}
 insp_analysed_seglists = {}
@@ -87,6 +90,13 @@ for ifo in args.single_detector_triggers:
     strig_file = resolve_url_to_file(os.path.abspath(fname),
                                      attrs={'ifos': ifo})
     single_triggers.append(strig_file)
+    psd_files.append(
+        resolve_url_to_file(
+            os.path.abspath(args.psd_files[ifo]),
+            attrs={'ifos': ifo},
+        )
+    )
+
     fsdt[ifo] = HFile(args.single_detector_triggers[ifo], 'r')
     insp_data_seglists[ifo] = select_segments_by_definer(
         args.inspiral_segments,
@@ -210,6 +220,11 @@ while event_count < num_events and curr_idx < (events_to_read - 1):
                              ifo_times, args.output_dir, special_tids=ifo_tids,
                              tags=args.tags + [str(event_count)])
 
+    files += mini.make_harmonic_waveform(workflow, single_triggers,
+                              tmpltbank_file, psd_files,
+                              args.output_dir, special_tids=ifo_tids,
+                              tags=args.tags + [str(event_count)])
+
     params = mini.get_single_template_params(
         curr_idx,
         times,
@@ -222,10 +237,13 @@ while event_count < num_events and curr_idx < (events_to_read - 1):
     _, sngl_tmplt_plots = mini.make_single_template_plots(
         workflow,
         insp_segs,
+        single_triggers,
+        tmpltbank_file,
         args.inspiral_data_read_name,
         args.inspiral_data_analyzed_name,
         params,
         args.output_dir,
+        special_tids=ifo_tids,
         data_segments=insp_data_seglists,
         tags=args.tags + [str(event_count)]
     )

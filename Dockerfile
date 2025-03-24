@@ -45,3 +45,24 @@ ENV LAL_DATA_PATH "/cvmfs/software.igwn.org/pycbc/lalsuite-extra/current/share/l
 # This can be overridden to log in as root with
 #   docker run -it pycbc/pycbc-el8:latest /bin/bash -l
 CMD ["/bin/su", "-l", "pycbc"]
+
+ADD requirements.txt /etc/requirements.txt
+
+ADD requirements-igwn.txt /etc/requirements-igwn.txt
+
+ADD companion.txt /etc/companion.txt
+
+# Quick fix for numpy version conflict
+RUN python3.9 -m pip install "numpy<2.0"
+
+# Replace the github repo accordingly
+RUN /bin/sh -c pip install -r /etc/requirements.txt && pip install -r /etc/requirements-igwn.txt && pip install -r /etc/companion.txt && pip install git+https://github.com/icg-gravwaves/pycbc.git@tha_development_work
+
+ADD docker/etc/docker-install.sh /etc/docker-install.sh
+
+# When the container is started with
+#   docker run -it pycbc/pycbc-el8:latest
+# the default is to start a loging shell as the pycbc user.
+# This can be overridden to log in as root with
+#   docker run -it pycbc/pycbc-el8:latest /bin/bash -l
+CMD ["/bin/su", "-l", "pycbc"]

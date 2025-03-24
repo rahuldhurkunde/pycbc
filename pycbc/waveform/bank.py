@@ -1359,10 +1359,15 @@ class _PhenomTemplate():
         # L-aligned frame
         h *= np.exp(2j * _dphi(thetaJN, alpha0, self.beta))
         # create LAL frequency array and return precessing harmonic
-        new = lal.CreateCOMPLEX16FrequencySeries(
-            "", lal.LIGOTimeGPS(hp.epoch), 0, df, lal.SecondUnit, len(h)
-        )
-        new.data.data[:] = h[:]
+
+        new = FrequencySeries(h[:], delta_f=df, epoch=hp.epoch, copy=False)
+
+        # Phenom is *very* annoying for a F-domain waveform, and does not
+        # obey the convention of having the merger at the end of the returned
+        # vector. It follow the T-domain convention instead of setting epoch.
+        # We therefore need to correct this.
+        new = new.cyclic_time_shift(new.end_time)
+
         return new
 
     def get_interpolated_harmonic_comp(
@@ -1388,13 +1393,16 @@ class _PhenomTemplate():
             thetaJN, alpha0, phi0, psi, df_min, f_final
         )
 
-        offset = int(extra_padding * (small.data.length-1)*2 * small.deltaF)
-
-        small = FrequencySeries(small.data.data[:], delta_f=small.deltaF,
-                                epoch=small.epoch)
+        offset = int(extra_padding * (len(small)-1)*2 * small.delta_f)
 
         large = interpolate_complex_frequency(small, df, zeros_offset=offset,
                                               side='left')
+
+        # Need to be careful about epoch here. large will have the same
+        # start_time as small, but the merger is still at the, longer, end.
+        extra_time = large.duration - small.duration
+        large.start_time = small.start_time - extra_time
+
         return large
 
     def compute_waveform_five_comps(self, df, f_final, num_comps=5, interp=True):
@@ -1403,8 +1411,8 @@ class _PhenomTemplate():
                 return self.get_interpolated_harmonic_comp(*args, **kwargs)
         else:
             def _func(*args, **kwargs):
-                h = self.gen_harmonics_comp(*args, **kwargs)
-                return FrequencySeries(h.data.data[:], delta_f=h.deltaF, epoch=h.epoch)
+                return self.gen_harmonics_comp(*args, **kwargs)
+
         # calculate 5 harmonic decomposition as defined in 1908.05707
         hgen1a = _func(0., 0., 0., 0., df, f_final)
         hgen1b = _func(0., 0., np.pi/4., np.pi/4, df, f_final)

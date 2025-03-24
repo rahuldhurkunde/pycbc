@@ -151,10 +151,9 @@ def compute_harmonic_waveform(trigs, special_idx, ifo, merge_psd_file):
 
     p_det = _make_waveform_from_precessing_harmonics(phenom_object, harmonics_dict, amplitudes_dict, phases_dict)
 
-    #Time-shift needed to wrap around the IFFT
-    ####Hard-coded to 10, need to change this
+    # Apply 2s time-shift to wrap the merger away from the endfor plotting
     pt_det = p_det.to_timeseries()
-    shifted_t = pt_det.cyclic_time_shift(10)
+    shifted_t = pt_det.cyclic_time_shift(-2)
 
     #Amplify the template
     amp_factor = sigma(harmonics_dict[0], low_frequency_cutoff=f_lower)
@@ -163,7 +162,7 @@ def compute_harmonic_waveform(trigs, special_idx, ifo, merge_psd_file):
     harmonics = []
     for i in range(ncomp):
         harm_temp = harmonics_dict[i].to_timeseries()
-        harm_temp = harm_temp.cyclic_time_shift(10)
+        harm_temp = harm_temp.cyclic_time_shift(-2)
         harm_temp /= amp_factor
         harmonics.append(harm_temp)
 
@@ -238,7 +237,7 @@ for ifo in args.single_trigger_files.keys():
     axs[axs_count].set_ylabel("Scaled $h(t)$")
     max_val = abs(shifted_t.data).argmax()
     max_time = shifted_t.sample_times[max_val]
-    axs[axs_count].set_xlim([max_time-0.7, max_time+0.2])
+    axs[axs_count].set_xlim([-0.7, 0.2])
     axs[axs_count].legend()
     axs[axs_count].grid()
     axs_count += 1

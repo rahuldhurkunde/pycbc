@@ -129,7 +129,7 @@ def setup_foreground_minifollowups(workflow, coinc_file, single_triggers,
     # determine if a staging site has been specified
     job = SubWorkflow(fil.name, is_planned=False)
     input_files = [tmpltbank_file, coinc_file, insp_segs] + \
-        single_triggers
+        single_triggers + psd_files
     job.add_inputs(*input_files)
     job.set_subworkflow_properties(map_file,
                                    staging_site=workflow.staging_site,
@@ -239,7 +239,7 @@ def setup_single_det_minifollowups(workflow, single_trig_file, tmpltbank_file,
     fil = node.output_files[0]
 
     job = SubWorkflow(fil.name, is_planned=False)
-    input_files = [tmpltbank_file, insp_segs, single_trig_file]
+    input_files = [tmpltbank_file, insp_segs, single_trig_file, psd_file]
     if veto_file is not None:
         input_files.append(veto_file)
     if statfiles:
@@ -336,6 +336,7 @@ def setup_injection_minifollowups(workflow, injection_file, inj_xml_file,
     job = SubWorkflow(fil.name, is_planned=False)
     input_files = [tmpltbank_file, injection_file, inj_xml_file, insp_segs]
     input_files += single_triggers
+    input_files += psd_files
     job.add_inputs(*input_files)
     job.set_subworkflow_properties(map_file,
                                    staging_site=workflow.staging_site,

@@ -1385,9 +1385,9 @@ class _PhenomTemplate():
             return 2.0 ** np.ceil(np.log2(float(val)))
 
 
-        # FIXME: THIS ONE IS IMPORTANT!!
-        extra_padding = 5
-        df_min = 1.0 / rulog2(self.duration + extra_padding)
+        extra_padding = 3 # This basically sets how much to allow for ringdown
+        safety = 10 # Add extra window because duration estimation can be bad
+        df_min = 1.0 / rulog2(self.duration + extra_padding + safety)
 
         small = self.gen_harmonics_comp(
             thetaJN, alpha0, phi0, psi, df_min, f_final

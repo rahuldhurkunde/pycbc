@@ -311,6 +311,7 @@ for num_event in range(num_events):
                       title="Details of closest event",
                       tags=args.tags + [str(num_event)])[0],)]
 
+    ifo_tids_strings = []
     for sngl in single_triggers:
         # Find the triggers close to _this_ injection at this IFO
         ifo = sngl.ifo
@@ -330,6 +331,7 @@ for num_event in range(num_events):
             title=f"Parameters of loudest SNR nearby trigger in {ifo}",
             tags=args.tags + [str(num_event)])[0]
         layouts += [(sngl_info,)]
+        ifo_tids_strings += ['%s:%s' % (ifo, nearby_trigger_idx)]
 
     files += mini.make_trigger_timeseries(workflow, single_triggers,
                               ifo_times, args.output_dir,
@@ -395,32 +397,6 @@ for num_event in range(num_events):
                             use_exact_inj_params=True)
     files += noinj_plot
 
-    ifo_tids_strings = []
-    for curr_ifo in args.single_detector_triggers:
-        # Finding loudest template in this detector near to the injection:
-        # First, find triggers close to the missed injection
-        single_fname = args.single_detector_triggers[curr_ifo]
-        idx, _ = HFile(single_fname).select(
-            lambda t: abs(t - inj_params['tc']) < args.inj_window,
-            f'{curr_ifo}/end_time',
-            return_data=False,
-        )
-
-        if len(idx) == 0:
-            # No events in the injection window for this detector
-            continue
-
-        hd_sngl = SingleDetTriggers(
-            single_fname,
-            curr_ifo,
-            bank_file=args.bank_file,
-            premask=idx
-        )
-        # Next, find the loudest within this set of triggers
-        # Use SNR here or NewSNR, or other??
-        loudest_idx = hd_sngl.snr.argmax()
-        hd_sngl.apply_mask([loudest_idx])
-        ifo_tids_strings += ['%s:%s' % (curr_ifo, loudest_idx)]
     curr_tags = ['THA_TRIGS']
     curr_tags += [str(num_event)]
 

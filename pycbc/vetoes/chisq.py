@@ -27,7 +27,6 @@ from pycbc.types import zeros, real_same_precision_as, TimeSeries, FrequencySeri
 from pycbc.filter import sigmasq_series, make_frequency_series, matched_filter_core, get_cutoff_indices
 from pycbc.scheme import schemed
 import pycbc.pnutils
-import matplotlib.pyplot as plt
 
 BACKEND_PREFIX="pycbc.vetoes.chisq_"
 
@@ -547,9 +546,9 @@ class SingleDetTHAPowerChisq(SingleDetPowerChisq):
     
     def reconstruct_template(self, templates, snrs, num_comps):
         scales = snrs / numpy.sum(numpy.abs(snrs) ** 2.) ** 0.5
-        template = templates[0] * scales[0] * numpy.angle(snrs[0])
+        template = templates[0] * scales[0]
         for i in range(1, num_comps):
-            template += templates[i] * scales[i] * numpy.angle(snrs[i])
+            template += templates[i] * scales[i]
 
         template.f_lower = templates[0].f_lower
         template.params = templates[0].params
@@ -585,7 +584,6 @@ class SingleDetTHAPowerChisq(SingleDetPowerChisq):
                 bins = []
                 scales = []
                 num_comps = len([t for t in templates if t is not None])
-
                 for lidx, index in enumerate(above_indices):
                     local_snrs = numpy.array([s[index] for s in snrs[:num_comps]])
                     template = self.reconstruct_template(templates, local_snrs, num_comps)
@@ -596,6 +594,7 @@ class SingleDetTHAPowerChisq(SingleDetPowerChisq):
                         local_snrs.conj()
                         / numpy.sum((local_snrs * local_snrs.conj()).real) ** 0.5
                     ]
+
                 bins = numpy.stack(bins, axis=0)
                 scales = numpy.stack(scales, axis=0)
                 

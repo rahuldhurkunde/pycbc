@@ -52,9 +52,6 @@ ADD requirements-igwn.txt /etc/requirements-igwn.txt
 
 ADD companion.txt /etc/companion.txt
 
-# Quick fix for numpy version conflict
-RUN python3.9 -m pip install "numpy<2.0"
-
 # Replace the github repo accordingly
 RUN /bin/sh -c pip install -r /etc/requirements.txt && pip install -r /etc/requirements-igwn.txt && pip install -r /etc/companion.txt && pip install git+https://github.com/icg-gravwaves/pycbc.git@tha_development_work
 

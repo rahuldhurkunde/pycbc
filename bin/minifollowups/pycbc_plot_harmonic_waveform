@@ -30,9 +30,11 @@ import pycbc.results
 from pycbc.types import MultiDetOptionAction
 from pycbc.types import FrequencySeries
 from pycbc.events import ranking
+from pycbc.events import select_segments_by_definer
 from pycbc.filter.matchedfilter import sigma
 from pycbc.io import HFile, SingleDetTriggers
 from pycbc.waveform.bank import PhenomXPTemplate, compute_beta
+from pycbc.strain import StrainSegments
 import pycbc.waveform.bank as bank
 
 class template_params:
@@ -81,25 +83,116 @@ def obtain_trigger_amp_phase(trigs, special_idx):
         phases_dict[i] = trigs.trigs[phase_key][special_idx]
     return amplitudes_dict, phases_dict
 
-def compute_harmonic_waveform(trigs, special_idx, ifo, merge_psd_file):
+
+def select_segments(fname, anal_name, data_name, ifo, time, pad_data):
+    anal_segs = select_segments_by_definer(fname, anal_name, ifo)
+    data_segs = select_segments_by_definer(fname, data_name, ifo)
+
+    # Anal segs should be disjoint, so first find the seg containing time
+    s = numpy.array([t[0] for t in anal_segs])
+    e = numpy.array([t[1] for t in anal_segs])
+    #ensure sorted
+    sorting = s.argsort()
+    s = s[sorting]
+    e = e[sorting]
+    idx = numpy.searchsorted(s, time) - 1
+    anal_time = (s[idx], e[idx])
+
+    # Now need to find the corresponding data_seg. This could be complicated
+    # as in edge cases the anal_time tuple could be completely contained within
+    # *two* data blocks (think analysis chunk slightly longer than minimum).
+    # We need to choose the *right* block to reproduce what the search did.
+
+    s2 = numpy.array([t[0] for t in data_segs])
+    e2 = numpy.array([t[1] for t in data_segs])
+    lgc = (s2 < time) & (e2 > time)
+    s2 = s2[lgc]
+    e2 = e2[lgc]
+    if len(s2) == 0:
+        err_msg = "Cannot find a data segment within %s" %(str(time))
+        raise ValueError(err_msg)
+    if len(s2) == 1:
+        data_time = (s2[0], e2[0])
+    if len(s2) > 1:
+        # The tricksy case. The corresponding data segment should have the
+        # largest overlap with anal_time
+        overlap = None
+        for start, end in zip(s2, e2):
+            if start + pad_data > anal_time[0] or end - pad_data < anal_time[1]:
+                # The analysis time must lie within the data time, otherwise
+                # this clearly is not the right data segment!
+                continue
+
+            curr_nonoverlap = anal_time[0] - start
+            curr_nonoverlap += end - anal_time[1]
+            if (overlap is None) or (curr_nonoverlap < overlap):
+                overlap = curr_nonoverlap
+                data_time = (start, end)
+        if overlap is None:
+            raise ValueError()
+
+    return anal_time, data_time
+
+
+def compute_harmonic_waveform(trigs, special_idx, ifo, merge_psd_file,
+                              sample_rate, segment_length, f_lower,
+                              segs_file_name, data_segment_name,
+                              analysed_segment_name, segment_start_pad,
+                              segment_end_pad, pad_data):
     bad_tempid = trigs.trigs['template_id'][special_idx]
     end_time = trigs.trigs['end_time'][special_idx]
 
     psd_fp = h5py.File(merge_psd_file, 'r')
     psd_fp = psd_fp[ifo]
+    analysed_time, data_time = select_segments(
+        segs_file_name,
+        analysed_segment_name,
+        data_segment_name,
+        ifo,
+        end_time,
+        pad_data=pad_data,
+    )
+
+    class DummyStrain():
+        pass
+
+    dummy_str = DummyStrain()
+    dummy_str.sample_rate = sample_rate
+    dummy_str.delta_t = 1./sample_rate
+    dummy_str.start_time = data_time[0]
+    dummy_str.end_time = data_time[1]
+    dummy_str.duration = dummy_str.end_time - dummy_str.start_time
+
+    str_segs = StrainSegments(
+        dummy_str,
+        segment_length=segment_length,
+        segment_start_pad = segment_start_pad,
+        segment_end_pad = segment_end_pad,
+        trigger_start = analysed_time[0],
+        trigger_end = analysed_time[1],
+        allow_zero_padding = True
+    )
+
+    for seg_slice, ana in zip(str_segs.segment_slices, str_segs.analyze_slices):
+        st = (seg_slice.start + ana.start)/sample_rate + data_time[0]
+        et = (seg_slice.start+ana.stop)/sample_rate + data_time[0]
+        if st < end_time < et:
+            analysed_start = st
+            analysed_end = et
+            break
+    else:
+        raise ValueError("Didn't find a segment")
+
     psd_idx = None
+    overlap = 0
     for idx in range(len(psd_fp['start_time'])):
         st = psd_fp['start_time'][idx]
         et = psd_fp['end_time'][idx]
-        if st < end_time < et:
-            print(st, et, end_time)
-            if psd_idx is not None:
-                # This may very well happen and we need to decide on which PSD
-                err_msg = "There seems to be multiple PSDs covering this time."
-                err_msg += " I don't know which one to use! Taking first."
-                logging.warn(err_msg)
-            else:
+        if st < analysed_end and analysed_start < et:
+            curr_overlap = min(et, analysed_end) - max(st, analysed_start)
+            if curr_overlap > overlap:
                 psd_idx = idx
+                overlap = curr_overlap
     if psd_idx is None:
         err_msg = "I couldn't find an overlapping PSD in the file!"
         err_msg += f" Covering time {end_time}."
@@ -120,10 +213,7 @@ def compute_harmonic_waveform(trigs, special_idx, ifo, merge_psd_file):
 
     #Create the template PhenomObject
     #### Hard-coded stuff change!! Get it from the triggers SOMEHOW?
-    sample_rate = 2048.0
-    sample_freq = 32.0
-    f_lower = 30.0
-    flen = int(sample_rate * sample_freq/2+1)
+    flen = int(sample_rate * segment_length/2+1)
     ncomp = trigs.bank['num_comps'][bad_tempid]
     # Hardcoded max numcomps for now:
     if ncomp > 3:
@@ -132,7 +222,7 @@ def compute_harmonic_waveform(trigs, special_idx, ifo, merge_psd_file):
     phenom_object = PhenomXPTemplate(params, sample_rate, f_lower)
 
     harmonics = phenom_object.get_whitened_normalized_comps(
-        1.0/sample_freq,
+        1.0/segment_length,
         psd,
         num_comps=ncomp,
     )
@@ -193,6 +283,29 @@ parser.add_argument('--merge-psd-files', nargs='+',
     help="Location of the MERGE_PSD output fiel to get the PSD from.",
     required=True,
 )
+parser.add_argument('--sample-rate', type=float, required=True,
+    help="Sample rate of the waveform",
+)
+parser.add_argument('--segment-length', type=float, required=True,
+    help="Length of waveform to generate (delta_f = 1 / segment_length)",
+)
+parser.add_argument('--f-lower', type=float, required=True,
+    help="Lower frequency for waveform generation",
+)
+# These options can be used to identify start/end times
+parser.add_argument("--inspiral-segments", required=True,
+        help="XML file containing the inspiral analysis segments. "
+             "Only used with the --statmap-file option")
+parser.add_argument("--data-read-name", required=True,
+        help="name of the segmentlist containing the data read in by each job "
+             "from the inspiral segment file")
+parser.add_argument("--data-analyzed-name", required=True,
+        help="name of the segmentlist containing the data analysed by each job "
+             "from the inspiral segment file")
+parser.add_argument('--segment-start-pad', type=int, required=True)
+parser.add_argument("--segment-end-pad", type=int, required=True)
+parser.add_argument("--pad-data", default=8, type=int)
+
 parser.add_argument('--output-file')
 
 args = parser.parse_args()
@@ -222,7 +335,7 @@ for ifo in args.single_trigger_files.keys():
     
     params = template_params(bankf, trigs.trigs['template_id'][special_idx])
 
-    shifted_t, ncomp, harmonics = compute_harmonic_waveform(trigs, special_idx, ifo, args.merge_psd_files[ifo])
+    shifted_t, ncomp, harmonics = compute_harmonic_waveform(trigs, special_idx, ifo, args.merge_psd_files[ifo], args.sample_rate, args.segment_length, args.f_lower, args.inspiral_segments, args.data_read_name, args.data_analyzed_name, args.segment_start_pad, args.segment_end_pad, args.pad_data)
 
     ###Zoom-in automatically. Again a crappy way! Improve it !!
     threshold = 1e-2  # or something data-specific

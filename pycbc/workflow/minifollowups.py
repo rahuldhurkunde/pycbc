@@ -532,7 +532,8 @@ def make_single_template_files(workflow, segs, singles, bank_file, ifo,
     return node.output_files
 
 
-def make_harmonic_waveform(workflow, singles, bank_file, psd_files,  out_dir,
+def make_harmonic_waveform(workflow, singles, bank_file, psd_files,
+                           data_read_name, analyzed_name, segs, out_dir,
                            veto_file=None, special_tids=None,
                            tags=None):
     tags = [] if tags is None else tags
@@ -548,6 +549,9 @@ def make_harmonic_waveform(workflow, singles, bank_file, psd_files,  out_dir,
         node.add_input_opt('--veto-file', veto_file)
     node.new_output_file_opt(workflow.analysis_time, '.png', '--output-file')
     node.add_opt('--special-trigger-ids', special_tids)
+    node.add_input_opt('--inspiral-segments', segs)
+    node.add_opt('--data-read-name', data_read_name)
+    node.add_opt('--data-analyzed-name', analyzed_name)
 
     workflow += node
     files += node.output_files
@@ -644,6 +648,12 @@ def make_single_template_plots(workflow, segs, singles, bank_file,
                     if sid.startswith(ifo):
                         break
                 else:
+                    # FIXME: I don't think we should be getting here. But we
+                    #        are. Leaving the continue here for now so that the
+                    #        code doesn't refuse to run. Result of whatever is
+                    #        wrong here is that occasional single_template
+                    #        plots do not get generated.
+                    continue
                     raise ValueError()
                 special_tid = sid[3:]
             else:

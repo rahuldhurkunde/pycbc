@@ -222,6 +222,9 @@ while event_count < num_events and curr_idx < (events_to_read - 1):
 
     files += mini.make_harmonic_waveform(workflow, single_triggers,
                               tmpltbank_file, psd_files,
+                              args.inspiral_data_read_name,
+                              args.inspiral_data_analyzed_name,
+                              insp_segs,
                               args.output_dir, special_tids=ifo_tids,
                               tags=args.tags + [str(event_count)])
 

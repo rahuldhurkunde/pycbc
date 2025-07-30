@@ -45,8 +45,11 @@ install_requires = setup_requires + [
     'tqdm',
     'setuptools',
     'gwdatafind',
-    'pegasus-wms.api >= 5.0.8',
-    'python-ligo-lw >= 1.7.0',
+    'pegasus-wms.api >= 5.1.1',
+    # FIXME igwn-ligolw 2.1.0 + lalsuite 7.25.1 produce errors arising from the
+    # old python-ligo-lw module. Remove pin when we have moved to a lalsuite
+    # that no longer depends on python-ligo-lw.
+    'igwn-ligolw<2.1.0',
     'igwn-segments',
     'lalsuite!=7.2',
     'lscsoft-glue>=1.59.3',

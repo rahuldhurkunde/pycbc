@@ -7,23 +7,13 @@ ADD docker/etc/cvmfs/60-osg.conf /etc/cvmfs/60-osg.conf
 ADD docker/etc/cvmfs/config-osg.opensciencegrid.org.conf /etc/cvmfs/config-osg.opensciencegrid.org.conf
 
 # Set up extra repositories
-RUN dnf -y install https://ecsft.cern.ch/dist/cvmfs/cvmfs-release/cvmfs-release-latest.noarch.rpm && dnf -y install cvmfs cvmfs-config-default && dnf clean all && dnf makecache && \
-    dnf -y groupinstall "Development Tools" \
-                        "Scientific Support" && \
-    rpm -e --nodeps git perl-Git && dnf -y install @python39 rsync zlib-devel libpng-devel libjpeg-devel sqlite-devel openssl-devel fftw-libs-single fftw-devel fftw fftw-libs-long fftw-libs fftw-libs-double gsl gsl-devel hdf5 hdf5-devel python39-devel swig which osg-ca-certs && python3.9 -m pip install --upgrade pip setuptools wheel cython && python3.9 -m pip install mkl ipython jupyter jupyterhub jupyterlab lalsuite && \
-    dnf -y install https://repo.opensciencegrid.org/osg/3.5/el8/testing/x86_64/osg-wn-client-3.5-5.osg35.el8.noarch.rpm && dnf -y install pelican-osdf-compat-7.10.11-1.x86_64 && dnf -y install pelican-7.10.11-1.x86_64 && dnf clean all
+RUN dnf -y install --setopt=install_weak_deps=False https://ecsft.cern.ch/dist/cvmfs/cvmfs-release/cvmfs-release-latest.noarch.rpm && dnf -y install --setopt=install_weak_deps=False cvmfs cvmfs-config-default && dnf clean all && dnf makecache && dnf -y install python39 python39-devel && dnf -y install --setopt=install_weak_deps=False fftw-libs-single fftw-devel fftw fftw-libs-long fftw-libs fftw-libs-double gsl gsl-devel hdf5 hdf5-devel osg-ca-certs git gcc-c++ && python3.9 -m pip install --no-cache-dir --upgrade pip setuptools wheel cython && python3.9 -m pip install --no-cache-dir mkl ipython lalsuite && \
+    dnf -y install --setopt=install_weak_deps=False https://repo.opensciencegrid.org/osg/3.5/el8/testing/x86_64/osg-wn-client-3.5-5.osg35.el8.noarch.rpm && dnf -y install --setopt=install_weak_deps=False pelican-osdf-compat-7.10.11-1.x86_64 && dnf -y install --setopt=install_weak_deps=False pelican-7.10.11-1.x86_64 && dnf clean all
 
 # set up environment
 RUN cd / && \
     mkdir -p /cvmfs/config-osg.opensciencegrid.org /cvmfs/software.igwn.org /cvmfs/gwosc.osgstorage.org && echo "config-osg.opensciencegrid.org /cvmfs/config-osg.opensciencegrid.org cvmfs ro,noauto 0 0" >> /etc/fstab && echo "software.igwn.org /cvmfs/software.igwn.org cvmfs ro,noauto 0 0" >> /etc/fstab && echo "gwosc.osgstorage.org /cvmfs/gwosc.osgstorage.org cvmfs ro,noauto 0 0" >> /etc/fstab && mkdir -p /oasis /scratch /projects /usr/lib64/slurm /var/run/munge && \
     groupadd -g 1000 pycbc && useradd -u 1000 -g 1000 -d /opt/pycbc -k /etc/skel -m -s /bin/bash pycbc
-
-# Install MPI software needed for pycbc_inference
-# at the end.
-RUN dnf -y install libibverbs libibverbs-devel libibmad libibmad-devel libibumad libibumad-devel librdmacm librdmacm-devel libmlx5 libmlx4 openmpi openmpi-devel && \
-    python3.9 -m pip install schwimmbad && \
-    MPICC=/lib64/openmpi/bin/mpicc CFLAGS='-I /usr/include/openmpi-x86_64/ -L /usr/lib64/openmpi/lib/ -lmpi' python3.9 -m pip install --no-cache-dir mpi4py
-RUN echo "/usr/lib64/openmpi/lib/" > /etc/ld.so.conf.d/openmpi.conf
 
 # Now update all of our library installations
 RUN rm -f /etc/ld.so.cache && /sbin/ldconfig
@@ -53,7 +43,7 @@ ADD requirements-igwn.txt /etc/requirements-igwn.txt
 ADD companion.txt /etc/companion.txt
 
 # Replace the github repo accordingly
-RUN /bin/sh -c pip install -r /etc/requirements.txt && pip install -r /etc/requirements-igwn.txt && pip install -r /etc/companion.txt && pip install git+https://github.com/icg-gravwaves/pycbc.git@tha_development_work
+RUN /bin/sh -c pip install -r /etc/requirements.txt && pip install gwpy>=0.8.1  && pip install git+https://github.com/icg-gravwaves/pycbc.git@tha_development_work
 
 ADD docker/etc/docker-install.sh /etc/docker-install.sh
 

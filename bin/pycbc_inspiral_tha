@@ -263,6 +263,16 @@ def template_triggers(t_num):
                                                      cluster_window,
                                                      epoch=stilde._epoch,
                                                      num_comps=num_comps)
+        if inj_filter_rejector.enabled:
+            trig_times = (
+                (idx + stilde.cumulative_index) /
+                snr_full.sample_rate + opt.gps_start_time
+            )
+            inj_idxs = inj_filter_rejector.find_indices_in_injection_intervals(
+                trig_times
+            )
+            idx = idx[inj_idxs]
+            snrv_full = snrv_full[inj_idxs]
         if not len(idx):
             continue
 
@@ -395,7 +405,7 @@ with ctx:
             tnum_start, event_mgr = events.EventManager.restore_state(checkpoint_file)
             checkpoint_exists = True
         except Exception as e:
-            if args.require_valid_checkpoint:
+            if opt.require_valid_checkpoint:
                 logging.info("Failed to load checkpoint file")
                 raise(e)
 

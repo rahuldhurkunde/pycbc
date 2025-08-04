@@ -2072,6 +2072,7 @@ class PhaseTDTHAStatistic(QuadratureSumStatistic):
                 # renormalise to PDF
                 self.weights[rtype] = \
                         weights[rtype] / (weights[rtype].sum() * bin_volume)
+                self.weights[rtype] = self.weights[rtype].astype(numpy.float32)
 
                 # New style, efficient histogram file
                 # param bin and weights have already been sorted

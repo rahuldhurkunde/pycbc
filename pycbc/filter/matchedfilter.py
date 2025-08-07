@@ -1084,6 +1084,13 @@ class MatchedFilterTHAControl(object):
     def run_correlators(self, segnum, i):
         self.correlators[segnum][i].correlate()
 
+    def get_squared_norm(self, i):
+        from pycbc.types.array_cpu import squared_norm
+        if i == 0:
+            self.snr_mem.data[:] = squared_norm(self.snr_mem_comps[i])
+        else:
+            self.snr_mem.data[:] += squared_norm(self.snr_mem_comps[i])
+
     def tha_matched_filter_and_cluster(self, segnum, template_norm, window, epoch=None, num_comps=5):
         """ Returns the complex snr timeseries, normalization of the complex snr,
         the correlation vector frequency series, the list of indices of the
@@ -1115,21 +1122,17 @@ class MatchedFilterTHAControl(object):
         snrv : Array
             The snr values at the trigger locations.
         """
-        from pycbc.types.array_cpu import squared_norm
         logging.info("Using %d comps" % num_comps)
         norm = (4.0 * self.delta_f)
         for i in range(num_comps):
             self.run_correlators(segnum, i)
             self.iffts[i].execute()
-            if i == 0:
-                self.snr_mem.data[:] = squared_norm(self.snr_mem_comps[i])
-            else:
-                self.snr_mem.data[:] += squared_norm(self.snr_mem_comps[i])
+            self.get_squared_norm(i)
 
-        self.snr_mem[:] = self.snr_mem[:]**0.5
         thresh = self.snr_threshold[num_comps - 1]
-        snrv, idx = self.threshold_and_clusterers[segnum].threshold_and_cluster((thresh / norm), window)
+        snrv, idx = self.threshold_and_clusterers[segnum].threshold_and_cluster((thresh / norm)**2, window)
         #shifted_idxs = self.segments[segnum].analyze.start + idx
+        snrv = snrv**0.5
         #self.snr_mem.data[shifted_idxs] = self.snr_mem.data[shifted_idxs]**0.5
 
 
@@ -1138,7 +1141,7 @@ class MatchedFilterTHAControl(object):
 
         logging.info("%s points above threshold" % str(len(idx)))
 
-        snr_full = TimeSeries(self.snr_mem, epoch=epoch, delta_t=self.delta_t, copy=False)
+        snrsq_full = TimeSeries(self.snr_mem, epoch=epoch, delta_t=self.delta_t, copy=False)
         snrs = [
             TimeSeries(self.snr_mem_comps[i], epoch=epoch, delta_t=self.delta_t, copy=False)
             if i < num_comps else None for i in range(5)
@@ -1147,7 +1150,7 @@ class MatchedFilterTHAControl(object):
             FrequencySeries(self.corr_mem_comps[i], delta_f=self.delta_f, copy=False)
             if i < num_comps else None for i in range(5)
         ]
-        return snr_full, norm, corrs, snrs, idx, snrv
+        return snrsq_full, norm, corrs, snrs, idx, snrv
 
 
 def make_frequency_series(vec):

@@ -11,16 +11,15 @@ RUN dnf -y install --setopt=install_weak_deps=False https://ecsft.cern.ch/dist/c
     dnf -y install --setopt=install_weak_deps=False https://repo.opensciencegrid.org/osg/3.5/el8/testing/x86_64/osg-wn-client-3.5-5.osg35.el8.noarch.rpm && dnf -y install --setopt=install_weak_deps=False pelican-osdf-compat-7.10.11-1.x86_64 && dnf -y install --setopt=install_weak_deps=False pelican-7.10.11-1.x86_64 && dnf clean all
 
 # set up environment
-mkdir -p /cvmfs/config-osg.opensciencegrid.org /cvmfs/software.igwn.org /cvmfs/gwosc.osgstorage.org
-echo "config-osg.opensciencegrid.org /cvmfs/config-osg.opensciencegrid.org cvmfs ro,noauto 0 0" >> /etc/fstab
-echo "software.igwn.org /cvmfs/software.igwn.org cvmfs ro,noauto 0 0" >> /etc/fstab
-echo "gwosc.osgstorage.org /cvmfs/gwosc.osgstorage.org cvmfs ro,noauto 0 0" >> /etc/fstab
-mkdir -p /oasis /scratch /projects /usr/lib64/slurm /var/run/munge
-groupadd -g 1000 pycbc
-useradd -u 1000 -g 1000 -d /opt/pycbc -k /etc/skel -m -s /bin/bash pycbc
+RUN cd / && \
+    mkdir -p /cvmfs/config-osg.opensciencegrid.org /cvmfs/software.igwn.org /cvmfs/gwosc.osgstorage.org && echo "config-osg.opensciencegrid.org /cvmfs/config-osg.opensciencegrid.org cvmfs ro,noauto 0 0" >> /etc/fstab && echo "software.igwn.org /cvmfs/software.igwn.org cvmfs ro,noauto 0 0" >> /etc/fstab && echo "gwosc.osgstorage.org /cvmfs/gwosc.osgstorage.org cvmfs ro,noauto 0 0" >> /etc/fstab && mkdir -p /oasis /scratch /projects /usr/lib64/slurm /var/run/munge && \
+    groupadd -g 1000 pycbc && useradd -u 1000 -g 1000 -d /opt/pycbc -k /etc/skel -m -s /bin/bash pycbc
 
 # Now update all of our library installations
 RUN rm -f /etc/ld.so.cache && /sbin/ldconfig
+
+# Make python be what we want
+RUN alternatives --set python /usr/bin/python3.9
 
 # Explicitly set the path so that it is not inherited from build the environment
 ENV PATH "/usr/local/bin:/usr/bin:/bin:/lib64/openmpi/bin/bin"
@@ -32,7 +31,7 @@ ENV LAL_DATA_PATH "/cvmfs/software.igwn.org/pycbc/lalsuite-extra/current/share/l
 
 # When the container is started with
 #   docker run -it pycbc/pycbc-el8:latest
-# the default is to start a login shell as the pycbc user.
+# the default is to start a loging shell as the pycbc user.
 # This can be overridden to log in as root with
 #   docker run -it pycbc/pycbc-el8:latest /bin/bash -l
 CMD ["/bin/su", "-l", "pycbc"]

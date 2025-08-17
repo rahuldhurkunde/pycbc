@@ -464,10 +464,21 @@ class EventManager(object):
                 f['coa_phase_comp_3'] = numpy.angle(self.events['snr_comp_3'])
                 f['coa_phase_comp_4'] = numpy.angle(self.events['snr_comp_4'])
                 f['coa_phase_comp_5'] = numpy.angle(self.events['snr_comp_5'])
+            if 'cont_chisq' in self.events.dtype.names:
+                f['cont_chisq'] = self.events['cont_chisq']
+                # FIXME: Can we get this value from the autochisq instance?
+                cont_dof = self.opt.autochi_number_points
+                if self.opt.autochi_onesided is None:
+                    cont_dof = cont_dof * 2
+                if self.opt.autochi_two_phase:
+                    cont_dof = cont_dof * 2
+                if self.opt.autochi_max_valued_dof:
+                    cont_dof = self.opt.autochi_max_valued_dof
+                f['cont_chisq_dof'] = numpy.repeat(cont_dof, len(self.events))
+
             f['chisq'] = self.events['chisq']
             f['bank_chisq'] = self.events['bank_chisq']
             f['bank_chisq_dof'] = self.events['bank_chisq_dof']
-            f['cont_chisq'] = self.events['cont_chisq']
             f['end_time'] = self.events['time_index'] / \
                               float(self.opt.sample_rate) \
                             + self.opt.gps_start_time
@@ -498,16 +509,6 @@ class EventManager(object):
                                   self.template_params]
             f['template_duration'] = numpy.array(template_durations,
                                                  dtype=numpy.float32)[tid]
-
-            # FIXME: Can we get this value from the autochisq instance?
-            cont_dof = self.opt.autochi_number_points
-            if self.opt.autochi_onesided is None:
-                cont_dof = cont_dof * 2
-            if self.opt.autochi_two_phase:
-                cont_dof = cont_dof * 2
-            if self.opt.autochi_max_valued_dof:
-                cont_dof = self.opt.autochi_max_valued_dof
-            f['cont_chisq_dof'] = numpy.repeat(cont_dof, len(self.events))
 
             if 'chisq_dof' in self.events.dtype.names:
                 f['chisq_dof'] = self.events['chisq_dof'] / 2 + 1

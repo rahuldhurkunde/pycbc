@@ -6,8 +6,9 @@ ADD docker/etc/cvmfs/default.local /etc/cvmfs/default.local
 ADD docker/etc/cvmfs/60-osg.conf /etc/cvmfs/60-osg.conf
 ADD docker/etc/cvmfs/config-osg.opensciencegrid.org.conf /etc/cvmfs/config-osg.opensciencegrid.org.conf
 
-# --- SOLUTION PART 1: Create the getconf wrapper script ---
-# This command creates the wrapper script inside the image.
+# LEVEL3_CACHE memory checks could returns undefined
+# Assigning values to the environment variable does not work.
+# So we need a wrapper script inside the image.
 # It intercepts calls for LEVEL3_CACHE_SIZE and returns a default value.
 RUN echo '#!/bin/sh' > /usr/local/bin/getconf && \
     echo 'if [ "$1" = "LEVEL3_CACHE_SIZE" ]; then' >> /usr/local/bin/getconf && \
@@ -20,8 +21,7 @@ RUN echo '#!/bin/sh' > /usr/local/bin/getconf && \
     echo '  exec /usr/bin/getconf "$@"' >> /usr/local/bin/getconf && \
     echo 'fi' >> /usr/local/bin/getconf
 
-# --- SOLUTION PART 2: Make the wrapper executable ---
-# This must be done as root before switching user.
+# Make the wrapper executable
 RUN chmod +x /usr/local/bin/getconf
 
 # Set up extra repositories

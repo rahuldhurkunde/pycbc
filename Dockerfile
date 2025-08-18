@@ -69,6 +69,9 @@ RUN pip install git+https://github.com/icg-gravwaves/pycbc.git@tha_development_w
 # Add post-install script
 ADD docker/etc/docker-install.sh /etc/docker-install.sh
 
-# Set the default command to start a login shell for the pycbc user
-# The default command is now simpler as we are already the correct user
-CMD ["/bin/bash", "-l", "pycbc"]
+# When the container is started with
+#   docker run -it pycbc/pycbc-el8:latest
+# the default is to start a loging shell as the pycbc user.
+# This can be overridden to log in as root with
+#   docker run -it pycbc/pycbc-el8:latest /bin/bash -l
+CMD ["/bin/su", "-l", "pycbc"]

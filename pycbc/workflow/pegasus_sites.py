@@ -241,11 +241,11 @@ def add_osg_site(sitecat, cp):
     site.add_profiles(Namespace.CONDOR, key="Requirements",
                       value="(HAS_SINGULARITY =?= TRUE) && "
                             "(IS_GLIDEIN =?= True)")
-    cvmfs_loc = '"./tha_precession_v1_8.sif"'
+    cvmfs_loc = '"./tha_precession_v1_8_5.sif"'
     site.add_profiles(Namespace.CONDOR, key="My.SingularityImage",
                       value=cvmfs_loc)
     site.add_profiles(Namespace.CONDOR, key='transfer_input_files',
-                      value='osdf:///igwn/cit/staging/rahul.dhurkunde/tha_precession_v1_8.sif')
+                      value='osdf:///igwn/cit/staging/rahul.dhurkunde/tha_precession_v1_8_5.sif')
     # On OSG failure rate is high
     site.add_profiles(Namespace.DAGMAN, key="retry", value="4")
     site.add_profiles(Namespace.ENV, key="LAL_DATA_PATH",

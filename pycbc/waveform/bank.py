@@ -1297,6 +1297,7 @@ class _PhenomTemplate():
         self.beta = compute_beta(self)
 
         self.comps = {}
+        self.num_comps = int(template_params.num_comps)
         self.has_comps = False
 
     def gen_hp_hc(self, thetaJN, alpha0, phi0, df, f_final):
@@ -1479,7 +1480,7 @@ class _PhenomTemplate():
             for j in range(i + 1, len(hs)):
                 tha_orthogonalize_vecs(hs[i].data, hs[j].data, df, len(hs[i]))
 
-    def get_whitened_normalized_comps(self, df, psd, num_comps=5):
+    def get_whitened_normalized_comps(self, df, psd):
         """
         Return a FrequencySeries of h+ and hx, whitened by the
         given ASD and normalized. The waveform is not zero-padded to
@@ -1495,7 +1496,7 @@ class _PhenomTemplate():
             if self.reverse_flag == 1:
                 waveforms.reverse()
 
-            for i in range(num_comps, 5):
+            for i in range(self.num_comps, 5):
                 waveforms[i] = None
 
             self.h1, self.h2, self.h3, self.h4, self.h5 = waveforms

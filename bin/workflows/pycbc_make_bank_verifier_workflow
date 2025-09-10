@@ -222,6 +222,10 @@ def add_banksim_set(workflow, file_tag, num_injs, curr_tags, split_banks):
         # are copied over to the results directory
         shutil.copy2(inspinj_job.get_opt('config-files'), conf_dir)
         node, inj_file = inspinj_job.create_node()
+        # Dummy values below, required only to get pycbc_create_injections running
+        # These do not affect the banksim results.
+        node.add_opt("--time-step", 1.0)
+        node.add_opt("--time-window", 0.1)
         node.add_opt("--gps-start-time", int_gps_time_to_str(t_seg[0]))
         node.add_opt("--gps-end-time", int_gps_time_to_str(t_seg[1]))
     else:

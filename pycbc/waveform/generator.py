@@ -36,7 +36,7 @@ from . import supernovae
 from . import waveform_modes
 from pycbc.types import TimeSeries
 from pycbc.waveform import parameters
-from pycbc.waveform.utils import apply_fseries_time_shift, taper_timeseries, \
+from pycbc.waveform.utils import apply_fseries_time_shift, \
                                  ceilpow2, apply_fd_time_shift
 from pycbc.detector import Detector
 from pycbc.pool import use_mpi
@@ -48,7 +48,7 @@ from pycbc import strain
 failed_counter = 0
 
 class BaseGenerator(object):
-    """A wrapper class to call a waveform generator with a set of frozen
+    r"""A wrapper class to call a waveform generator with a set of frozen
     parameters and a set of variable parameters. The frozen parameters and
     values, along with a list of variable parameter names, are set at
     initialization. This way, repeated calls can be made to the underlying
@@ -276,11 +276,15 @@ class TDomainCBCGenerator(BaseCBCGenerator):
         """Applies a taper if it is in current params.
         """
         hp, hc = res
-        try:
-            hp = taper_timeseries(hp, tapermethod=self.current_params['taper'])
-            hc = taper_timeseries(hc, tapermethod=self.current_params['taper'])
-        except KeyError:
-            pass
+        if 'taper' in self.current_params:
+            location = self.current_params['taper']
+            hp = hp.taper_timeseries(location=location,
+                                     tapermethod=self.current_params.get('taper_method', 'lal'), 
+                                     taper_window=self.current_params.get('taper_window'))
+            hc = hc.taper_timeseries(location=location,
+                                     tapermethod=self.current_params.get('taper_method', 'lal'), 
+                                     taper_window=self.current_params.get('taper_window'))
+ 
         return hp, hc
 
 
@@ -303,11 +307,15 @@ class TDomainCBCModesGenerator(BaseCBCGenerator):
         """Applies a taper if it is in current params.
         """
         if 'taper' in self.current_params:
-            tapermethod = self.current_params['taper']
+            location = self.current_params['taper']
             for mode in res:
                 ulm, vlm = res[mode]
-                ulm = taper_timeseries(ulm, tapermethod=tapermethod)
-                vlm = taper_timeseries(vlm, tapermethod=tapermethod)
+                ulm = ulm.taper_timeseries(location=location, 
+                                           tapermethod=self.current_params.get('taper_method', 'lal'), 
+                                           taper_window=self.current_params.get('taper_window'))
+                vlm = vlm.taper_timeseries(location=location, 
+                                           tapermethod=self.current_params.get('taper_method', 'lal'), 
+                                           taper_window=self.current_params.get('taper_window'))
                 res[mode] = (ulm, vlm)
         return res
 
@@ -444,7 +452,7 @@ class TDomainSupernovaeGenerator(BaseGenerator):
 
 
 class BaseFDomainDetFrameGenerator(metaclass=ABCMeta):
-    """Base generator for frquency-domain waveforms in a detector frame.
+    r"""Base generator for frquency-domain waveforms in a detector frame.
 
     Parameters
     ----------
@@ -564,7 +572,7 @@ class BaseFDomainDetFrameGenerator(metaclass=ABCMeta):
 
 
 class FDomainDetFrameGenerator(BaseFDomainDetFrameGenerator):
-    """Generates frequency-domain waveform in a specific frame.
+    r"""Generates frequency-domain waveform in a specific frame.
 
     Generates a waveform using the given radiation frame generator class,
     and applies the detector response function and appropriate time offset.
@@ -711,7 +719,7 @@ class FDomainDetFrameGenerator(BaseFDomainDetFrameGenerator):
 
 
 class FDomainDetFrameTwoPolGenerator(BaseFDomainDetFrameGenerator):
-    """Generates frequency-domain waveform in a specific frame.
+    r"""Generates frequency-domain waveform in a specific frame.
 
     Generates both polarizations of a waveform using the given radiation frame
     generator class, and applies the time shift. Detector response functions
@@ -858,7 +866,7 @@ class FDomainDetFrameTwoPolGenerator(BaseFDomainDetFrameGenerator):
         return select_waveform_generator(approximant, domain)
 
 class FDomainDetFrameTwoPolNoRespGenerator(BaseFDomainDetFrameGenerator):
-    """Generates frequency-domain waveform in a specific frame.
+    r"""Generates frequency-domain waveform in a specific frame.
 
     Generates both polarizations of a waveform using the given radiation frame
     generator class, and applies the time shift. Detector response functions
@@ -958,7 +966,7 @@ class FDomainDetFrameTwoPolNoRespGenerator(BaseFDomainDetFrameGenerator):
 
 
 class FDomainDetFrameModesGenerator(BaseFDomainDetFrameGenerator):
-    """Generates frequency-domain waveform modes in a specific frame.
+    r"""Generates frequency-domain waveform modes in a specific frame.
 
     Generates both polarizations of every waveform mode using the given
     radiation frame generator class, and applies the time shift. Detector

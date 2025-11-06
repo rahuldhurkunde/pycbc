@@ -1007,6 +1007,11 @@ _filter_preconditions = {}
 _template_amplitude_norms = {}
 _filter_time_lengths = {}
 
+def get_fixed_template_duration(**kwds):
+    """Stub for returning a fixed duration for a template
+    """
+    return float(kwds['duration'])
+
 def seobnrv2_final_frequency(**kwds):
     return pnutils.get_final_freq("SEOBNRv2", kwds['mass1'], kwds['mass2'],
                                   kwds['spin1z'], kwds['spin2z'])
@@ -1111,6 +1116,7 @@ _filter_time_lengths["IMRPhenomXPHM"] = imrphenomhm_length_in_time
 _filter_time_lengths["SpinTaylorF2"] = spa_length_in_time
 _filter_time_lengths["TaylorF2NL"] = spa_length_in_time
 _filter_time_lengths["PreTaylorF2"] = spa_length_in_time
+_filter_time_lengths["Hyperbolic15PNhphc"] = get_fixed_template_duration
 
 # Also add generators for switching between approximants
 apx_name = "SpinTaylorF2_SWAPPER"
@@ -1193,8 +1199,7 @@ def get_waveform_filter(out, template=None, **kwargs):
         wav_gen = fd_wav[type(_scheme.mgr.state)]
 
         duration = get_waveform_filter_length_in_time(**input_params)
-        hp, _ = wav_gen[input_params['approximant']](duration=duration,
-                                               return_hc=False, **input_params)
+        hp, _ = wav_gen[input_params['approximant']](return_hc=False, **input_params)
 
         hp.resize(n)
         out[0:len(hp)] = hp[:]

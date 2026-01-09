@@ -1,4 +1,5 @@
 #! /usr/bin/env python
+
 # Copyright (C) 2012  Alex Nitz
 # This program is free software; you can redistribute it and/or modify it
 # under the terms of the GNU General Public License as published by the
@@ -302,7 +303,7 @@ def compute_beta(tmplt):
 
 class _FDTemplate():
     def __init__(self, m1, m2, spin1x, spin1y, spin1z, spin2x, spin2y, spin2z,
-                 theta, phi, iota, psi, orb_phase, sample_rate, f_lower):
+                 theta, phi, iota, psi, orb_phase, sample_rate, f_lower, reverse_flag):
         self.flow = f_lower
         self.f_final = sample_rate / 2.
 
@@ -321,6 +322,7 @@ class _FDTemplate():
         self.psi = float(psi)
         self.orb_phase = float(orb_phase)
         self.fref = self.flow
+        self.reverse_flag = int(reverse_flag)
 
         outs = self._model_parameters_from_source_frame(
             self.mass1*lal.MSUN_SI,
@@ -378,10 +380,15 @@ class _FDTemplate():
                 self.mass1*lal.MSUN_SI, self.mass2*lal.MSUN_SI, self.fref, phi0
             )
         # generate hp, hc for given orientation with lalsimulation
-        hp, hc = lalsim.SimInspiralChooseFDWaveform(
+        LALparams = lal.CreateDict()
+        if self.flag == True:
+            lalsim.SimInspiralWaveformParamsInsertPhenomXPrecVersion(LALparams, 300)
+            lalsim.SimInspiralWaveformParamsInsertPhenomXPFinalSpinMod(LALparams, 2)
+
+        hp, hc = lalsim.SimInspiralFD(
             self.mass1*lal.MSUN_SI, self.mass2*lal.MSUN_SI, spin1x, spin1y,
             spin1z, spin2x, spin2y, spin2z, 1.e6*lal.PC_SI, iota, phi0,
-            0, 0, 0, df, self.flow, f_final, self.fref, lal.CreateDict(),
+            0, 0, 0, df, self.flow, f_final, self.fref, LALparams,
             lalsim.GetApproximantFromString(self.approximant)
         )
         # 1908.05707 defines psi in J-aligned frame. Need to rotate to
@@ -439,159 +446,47 @@ class _FDTemplate():
         hs = (h1, h2, h3, h4, h5)
         return hs
 
-    def get_whitened_normalized_comps(self, df, psd):
-        """
-        Return a COMPLEX8FrequencySeries of h+ and hx, whitened by the
-        given ASD and normalized. The waveform is not zero-padded to
-        match the length of the ASD, so its normalization depends on
-        its own length.
-        """
-        if df in self.comps:
-            return self.comps[df]
-        
-        
-        # Generate a new wf
+    def whiten_and_normalize(self, arr, ASD, flow, f_final, df):
+        arr[:] /= ASD[:len(arr)]
+        arr[:int(flow / df)] = 0. # Zeroing out low frequencies
+        arr[int(f_final / df):len(arr)] = 0.  # Zeroing out high frequencies
+        sigmasq = compute_sigmasq(arr, df)
+        arr[:] /= sigmasq ** 0.5
+        return arr
+
+    def orthogonalize_and_normalize(self, components, df):
+        for i in range(len(components)):
+            for j in range(i + 1, len(components)):
+                corr = compute_complex_correlation(components[i], components[j], df)
+                components[j][:] -= corr * components[i][:]
+            for j in range(i + 1, len(components)):
+                norm_temp = compute_sigmasq(components[j], df)
+                components[j][:] /= norm_temp**0.5
+
+
+    def new_get_whitened_normalized_comps(self, df, psd, reverse_flag=False):
         h1, h2, h3, h4, h5 = self.compute_waveform_five_comps(df, self.f_final)
-        flen = h1.data.length
-        ASD = psd.data**0.5
+        flen = h5.data.length if reverse_flag else h1.data.length
+        ASD = psd.data ** 0.5
 
-        if h1.data.length > len(ASD):
-            err_msg = "waveform has length greater than ASD; cannot whiten"
-            raise ValueError(err_msg)
-        arr_view_h1 = h1.data.data
-        arr_view_h2 = h2.data.data
-        arr_view_h3 = h3.data.data
-        arr_view_h4 = h4.data.data
-        arr_view_h5 = h5.data.data
+        waveforms = [h5, h4, h3, h2, h1] if reverse_flag else [h1, h2, h3, h4, h5]
 
-        # Whiten
-        arr_view_h1[:] /= ASD[:h1.data.length]
-        arr_view_h1[:int(self.flow / df)] = 0.
-        arr_view_h1[int(self.f_final/df):h1.data.length] = 0.
+        # Error check
+        if waveforms[0].data.length > len(ASD):
+            raise ValueError("waveform has length greater than ASD; cannot whiten")
 
-        arr_view_h2[:] /= ASD[:h2.data.length]
-        arr_view_h2[:int(self.flow / df)] = 0.
-        arr_view_h2[int(self.f_final/df):h2.data.length] = 0.
+        # Process waveforms: whiten, normalize, and orthogonalize
+        arr_views = [w.data.data for w in waveforms]
+        for i, arr in enumerate(arr_views):
+            arr_views[i] = self.whiten_and_normalize(arr, ASD, self.flow, self.f_final, df)
 
-        arr_view_h3[:] /= ASD[:h3.data.length]
-        arr_view_h3[:int(self.flow / df)] = 0.
-        arr_view_h3[int(self.f_final/df):h3.data.length] = 0.
+        self.orthogonalize_and_normalize(arr_views, df)
 
-        arr_view_h4[:] /= ASD[:h4.data.length]
-        arr_view_h4[:int(self.flow / df)] = 0.
-        arr_view_h4[int(self.f_final/df):h4.data.length] = 0.
+        # Create FrequencySeries objects
+        freqs = [FrequencySeries(w.data.data[:], delta_f=w.deltaF, epoch=w.epoch, dtype=np.complex128) for w in waveforms]
+        self.comps[df] = freqs
+        return freqs
 
-        arr_view_h5[:] /= ASD[:h5.data.length]
-        arr_view_h5[:int(self.flow / df)] = 0.
-        arr_view_h5[int(self.f_final/df):h5.data.length] = 0.
-
-
-        # Get normalization factors and normalize
-        h1sigmasq = compute_sigmasq(arr_view_h1, df)
-        h2sigmasq = compute_sigmasq(arr_view_h2, df)
-        h3sigmasq = compute_sigmasq(arr_view_h3, df)
-        h4sigmasq = compute_sigmasq(arr_view_h4, df)
-        h5sigmasq = compute_sigmasq(arr_view_h5, df)
-        arr_view_h1[:] /= h1sigmasq**0.5
-        arr_view_h2[:] /= h2sigmasq**0.5
-        arr_view_h3[:] /= h3sigmasq**0.5
-        arr_view_h4[:] /= h4sigmasq**0.5
-        arr_view_h5[:] /= h5sigmasq**0.5
-
-        h1h2corr = compute_complex_correlation(arr_view_h1, arr_view_h2, df)
-        h1h3corr = compute_complex_correlation(arr_view_h1, arr_view_h3, df)
-        h1h4corr = compute_complex_correlation(arr_view_h1, arr_view_h4, df)
-        h1h5corr = compute_complex_correlation(arr_view_h1, arr_view_h5, df)
-
-        arr_view_h2[:] = \
-            arr_view_h2[:] - h1h2corr * arr_view_h1[:]
-        arr_view_h3[:] = \
-            arr_view_h3[:] - h1h3corr * arr_view_h1[:]
-        arr_view_h4[:] = \
-            arr_view_h4[:] - h1h4corr * arr_view_h1[:]
-        arr_view_h5[:] = \
-            arr_view_h5[:] - h1h5corr * arr_view_h1[:]
-
-        h2sigmasq = compute_sigmasq(arr_view_h2, df)
-        h3sigmasq = compute_sigmasq(arr_view_h3, df)
-        h4sigmasq = compute_sigmasq(arr_view_h4, df)
-        h5sigmasq = compute_sigmasq(arr_view_h5, df)
-        arr_view_h2[:] /= h2sigmasq**0.5
-        arr_view_h3[:] /= h3sigmasq**0.5
-        arr_view_h4[:] /= h4sigmasq**0.5
-        arr_view_h5[:] /= h5sigmasq*0.5
-
-        h2h3corr = compute_complex_correlation(arr_view_h2, arr_view_h3, df)
-        h2h4corr = compute_complex_correlation(arr_view_h2, arr_view_h4, df)
-        h2h5corr = compute_complex_correlation(arr_view_h2, arr_view_h5, df)
-        arr_view_h3[:] = \
-            arr_view_h3[:] - h2h3corr * arr_view_h2[:]
-        arr_view_h4[:] = \
-            arr_view_h4[:] - h2h4corr * arr_view_h2[:]
-        arr_view_h5[:] = \
-            arr_view_h5[:] - h2h5corr * arr_view_h2[:]
-        h3sigmasq = compute_sigmasq(arr_view_h3, df)
-        h4sigmasq = compute_sigmasq(arr_view_h4, df)
-        h5sigmasq = compute_sigmasq(arr_view_h5, df)
-        arr_view_h3[:] /= h3sigmasq**0.5
-        arr_view_h4[:] /= h4sigmasq**0.5
-        arr_view_h5[:] /= h5sigmasq**0.5
-
-        h3h4corr = compute_complex_correlation(arr_view_h3, arr_view_h4, df)
-        h3h5corr = compute_complex_correlation(arr_view_h3, arr_view_h5, df)
-        arr_view_h4[:] = \
-            arr_view_h4[:] - h3h4corr * arr_view_h3[:]
-        arr_view_h5[:] = \
-            arr_view_h5[:] - h3h5corr * arr_view_h3[:]
-        h4sigmasq = compute_sigmasq(arr_view_h4, df)
-        h5sigmasq = compute_sigmasq(arr_view_h5, df)
-        arr_view_h4[:] /= h4sigmasq**0.5
-        arr_view_h5[:] /= h5sigmasq**0.5
-
-        h4h5corr = compute_complex_correlation(arr_view_h4, arr_view_h5, df)
-        arr_view_h5[:] = \
-            arr_view_h5[:] - h4h5corr * arr_view_h4[:]
-        h5sigmasq = compute_sigmasq(arr_view_h5, df)
-        arr_view_h5[:] /= h5sigmasq**0.5
-
-        h1P = FrequencySeries(h1.data.data[:], delta_f=h1.deltaF, epoch=h1.epoch)
-        h2P = FrequencySeries(h2.data.data[:], delta_f=h2.deltaF, epoch=h2.epoch)
-        h3P = FrequencySeries(h3.data.data[:], delta_f=h1.deltaF, epoch=h3.epoch)
-        h4P = FrequencySeries(h4.data.data[:], delta_f=h2.deltaF, epoch=h4.epoch)
-        h5P = FrequencySeries(h5.data.data[:], delta_f=h1.deltaF, epoch=h5.epoch)
-        
-        self.comps[df] = [h1P, h2P, h3P, h4P, h5P]
-        
-        return h1P, h2P, h3P, h4P, h5P
-    
-    def generate_random_signal(self, df):
-        thetaJN = random.random() * np.pi
-        alpha0 = random.random() * 2 * np.pi
-        phi0 = random.random() * 2 * np.pi
-        psi = random.random() * 2 * np.pi
-        
-        hp, hc = self.gen_phenom_p_comp(thetaJN, alpha0, phi0, df)
-        flen = hp.data.length
-        psd = aLIGOZeroDetHighPower(flen, df, 30.)
-        ASD = psd.data**0.5
-
-        arr_view_h1 = hp.data.data
-        arr_view_h2 = hc.data.data
-
-        # Whiten
-        arr_view_h1[:] /= ASD[:hp.data.length]
-        arr_view_h1[:int(self.flow / df)] = 0.
-        arr_view_h1[int(self.f_final/df):hp.data.length] = 0.
-
-        arr_view_h2[:] /= ASD[:hp.data.length]
-        arr_view_h2[:int(self.flow / df)] = 0.
-        arr_view_h2[int(self.f_final/df):hp.data.length] = 0.
-        
-        hpP = FrequencySeries(hp.data.data[:], delta_f=hp.deltaF, epoch=hp.epoch)
-        hcP = FrequencySeries(hc.data.data[:], delta_f=hc.deltaF, epoch=hc.epoch)
-
-        return hpP * np.sin(2*psi) + hcP * np.cos(2*psi)
-    
     def test_five_comps_orthogonality(self, df, psd):
 
         hs = self.get_whitened_normalized_comps(df, psd)
@@ -603,6 +498,15 @@ class _FDTemplate():
                     print (i, j, abs(overlap_cplx(hs[i], hs[j], low_frequency_cutoff=30.)))
 
 
+class PhenomTPTemplate(_FDTemplate):
+    approximant = "IMRPhenomTP"
+    flag = False
+
+    def _model_parameters_from_source_frame(self, *args):
+        return lalsim.SimIMRPhenomXPCalculateModelParametersFromSourceFrame(
+            *args, None
+        )
+
 class PhenomPv2Template(_FDTemplate):
     approximant = "IMRPhenomPv2"
 
@@ -611,16 +515,14 @@ class PhenomPv2Template(_FDTemplate):
             *args, lalsim.IMRPhenomPv2_V
         )
 
-
 class PhenomXPTemplate(_FDTemplate):
-    approximant = "IMRPhenomXP" 
+    approximant = "IMRPhenomXP"
+    flag = True
 
     def _model_parameters_from_source_frame(self, *args):
         return lalsim.SimIMRPhenomXPCalculateModelParametersFromSourceFrame(
             *args, None
         )
-
-
 
 def get_tha_waveform(approximant, wf_params, start_frequency, sample_rate,
                      length, filter_rate, psd):
@@ -648,22 +550,24 @@ def get_tha_waveform(approximant, wf_params, start_frequency, sample_rate,
     iota = template_params.inclination
     psi = template_params.polarization
     orb_phase = template_params.orbital_phase
+    reverse_flag = template_params.reverse_flag
 
     if approximant == "IMRPhenomPv2":
         cls = PhenomPv2Template
     elif approximant == "IMRPhenomXP":
         cls = PhenomXPTemplate
+    elif approximant == "IMRPhenomTP":
+        cls = PhenomTPTemplate
     else:
-        print (approximant)
-        raise ValueError("Can only do PhenomPv2 and PhenomXP right now!")
+        raise ValueError("Can only do PhenomPv2, PhenomXP and PhenomTP right now!")
     curr_tmp = cls(mass1, mass2, spin1x, spin1y, spin1z, spin2x,
                    spin2y, spin2z, theta, phi, iota, psi,
-                   orb_phase, sample_rate, start_frequency)
+                   orb_phase, sample_rate, start_frequency, reverse_flag)
 
 
     #curr_tmp.test_five_comps_orthogonality(delta_f, psd)
 
-    return curr_tmp.get_whitened_normalized_comps(delta_f, psd)
+    return curr_tmp.new_get_whitened_normalized_comps(delta_f, psd, reverse_flag)
     
 
 

@@ -222,8 +222,7 @@ def add_banksim_set(workflow, file_tag, num_injs, curr_tags, split_banks):
         # are copied over to the results directory
         shutil.copy2(inspinj_job.get_opt('config-files'), conf_dir)
         node, inj_file = inspinj_job.create_node()
-        node.add_opt("--gps-start-time", int_gps_time_to_str(t_seg[0]))
-        node.add_opt("--gps-end-time", int_gps_time_to_str(t_seg[1]))
+        node.add_opt("--ninjections", int(num_injs))
     else:
         raise NotImplementedError
     workflow += node

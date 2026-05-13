@@ -123,6 +123,12 @@ def add_condorpool_copy_site(sitecat, cp):
                       value="nonsharedfs")
     site.add_profiles(Namespace.PEGASUS, key='transfer.bypass.input.staging',
                       value="true")
+    # Singularity image stuff
+    image_path = "/home/rahul.dhurkunde/searches/3G/singularity-images/3g_branch_v1_0_0.sif"
+    site.add_profiles(Namespace.CONDOR, key="My.SingularityImage", value=f'"{image_path}"')
+    site.add_profiles(Namespace.CONDOR, key="My.SingularityCleanEnv", value="True")
+    site.add_profiles(Namespace.CONDOR, key="getenv", value="False")
+
     # This explicitly disables symlinking
     site.add_profiles(Namespace.PEGASUS, key='nosymlink',
                       value=True)

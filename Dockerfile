@@ -10,8 +10,18 @@ ADD docker/etc/cvmfs/config-osg.opensciencegrid.org.conf /etc/cvmfs/config-osg.o
 RUN dnf -y install python3.11 python3.11-devel python3.11-pip
 RUN alternatives --set python /usr/bin/python3.11
 
-# Set up extra repositories
-RUN dnf -y install --setopt=install_weak_deps=False https://ecsft.cern.ch/dist/cvmfs/cvmfs-release/cvmfs-release-latest.noarch.rpm && dnf -y install --setopt=install_weak_deps=False cvmfs cvmfs-config-default && dnf clean all && dnf makecache && dnf -y install --setopt=install_weak_deps=False fftw-libs-single fftw-devel fftw fftw-libs-long fftw-libs fftw-libs-double gsl gsl-devel hdf5 hdf5-devel osg-ca-certs git gcc-c++ && python3.11 -m pip install --no-cache-dir --upgrade pip setuptools wheel cython && python3.11 -m pip install --no-cache-dir mkl ipython lalsuite
+# Set up extra repositories & Install packages
+RUN dnf -y install --setopt=install_weak_deps=False https://ecsft.cern.ch/dist/cvmfs/cvmfs-release/cvmfs-release-latest.noarch.rpm && \
+    dnf -y install --setopt=install_weak_deps=False cvmfs cvmfs-config-default && \
+    dnf clean all && \
+    dnf config-manager --set-enabled powertools || dnf config-manager --set-enabled crb && \
+    dnf makecache && \
+    dnf -y install --setopt=install_weak_deps=False \
+        fftw-libs-single fftw-devel fftw fftw-libs-long fftw-libs fftw-libs-double \
+        gsl gsl-devel hdf5 hdf5-devel osg-ca-certs git gcc-c++ \
+        openmpi openmpi-devel && \
+    python3.11 -m pip install --no-cache-dir --upgrade pip setuptools wheel cython && \
+    python3.11 -m pip install --no-cache-dir mkl ipython lalsuite
 
 RUN dnf -y install --setopt=install_weak_deps=False \
     osg-wn-client \

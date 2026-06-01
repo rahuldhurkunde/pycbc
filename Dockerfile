@@ -21,7 +21,7 @@ RUN dnf -y install --setopt=install_weak_deps=False https://ecsft.cern.ch/dist/c
         gsl gsl-devel hdf5 hdf5-devel osg-ca-certs git gcc-c++ \
         openmpi openmpi-devel && \
     python3.11 -m pip install --no-cache-dir --upgrade pip setuptools wheel cython && \
-    python3.11 -m pip install --no-cache-dir mkl ipython lalsuite
+    python3.11 -m pip install --no-cache-dir mkl ipython lalsuite mpi4py
 
 RUN dnf -y install --setopt=install_weak_deps=False \
     osg-wn-client \

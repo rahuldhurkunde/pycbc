@@ -840,6 +840,7 @@ class LiveCoincTimeslideBackgroundEstimator(object):
                  statistic_refresh_rate=None,
                  return_background=False,
                  ifar_remove_threshold=None,
+                 injection_veto_chunks=None,
                  **kwargs):
         """
         Parameters
@@ -898,6 +899,11 @@ class LiveCoincTimeslideBackgroundEstimator(object):
         # Set of integer chunk indices (gps_time // analysis_block) whose
         # triggers are excluded from coincidence formation
         self.loud_chunks = set()
+        # Full set of injection-based veto chunk indices (never pruned).
+        self.injection_veto_chunks = frozenset(injection_veto_chunks or [])
+        # Subset of injection_veto_chunks within the current rolling window;
+        # updated each iteration so background_time is not over-subtracted.
+        self.active_injection_veto_chunks = frozenset()
 
         self.ifos = ifos
         if len(self.ifos) != 2:
@@ -989,6 +995,12 @@ class LiveCoincTimeslideBackgroundEstimator(object):
             stat_keywords,
         )
 
+        injection_veto_chunks = None
+        veto_file = getattr(args, 'veto_injection_time_file', None)
+        if veto_file:
+            times = numpy.atleast_1d(numpy.loadtxt(veto_file))
+            injection_veto_chunks = (times // analysis_chunk).astype(numpy.int64).tolist()
+
         return cls(num_templates, analysis_chunk,
                    args.ranking_statistic,
                    args.sngl_ranking,
@@ -1000,6 +1012,7 @@ class LiveCoincTimeslideBackgroundEstimator(object):
                    coinc_window_pad=args.coinc_window_pad,
                    statistic_refresh_rate=args.statistic_refresh_rate,
                    ifar_remove_threshold=args.ifar_remove_threshold,
+                   injection_veto_chunks=injection_veto_chunks,
                    **kwargs)
 
     @staticmethod
@@ -1020,6 +1033,11 @@ class LiveCoincTimeslideBackgroundEstimator(object):
                  "(in years) above this threshold, the analysis chunks "
                  "containing its triggers are marked as loud and excluded "
                  "from background estimation", default=None)
+        group.add_argument('--veto-injection-time-file', type=str,
+            help="File with one GPS time per line. Analysis blocks "
+                 "containing any of these times are permanently excluded "
+                 "from background estimation, independently of "
+                 "--ifar-remove-threshold.", default=None)
 
     @staticmethod
     def verify_args(args, parser):
@@ -1035,7 +1053,8 @@ class LiveCoincTimeslideBackgroundEstimator(object):
         time = 1.0 / self.timeslide_interval
         # Dirty chunks are excluded from coincidence formation in both
         # detectors, so they do not contribute to the background time
-        loud_time = len(self.loud_chunks) * self.analysis_block
+        all_loud = self.loud_chunks | self.active_injection_veto_chunks
+        loud_time = len(all_loud) * self.analysis_block
         for ifo in self.singles:
             livetime = self.singles[ifo].filled_time * self.analysis_block
             time *= max(livetime - loud_time, 0)
@@ -1315,29 +1334,38 @@ class LiveCoincTimeslideBackgroundEstimator(object):
             ctime0 = numpy.concatenate(ctimes[self.ifos[0]]).astype(numpy.float64)
             ctime1 = numpy.concatenate(ctimes[self.ifos[1]]).astype(numpy.float64)
             good = None
+            cur_max_time = max(ctime0.max(), ctime1.max())
+            min_end = cur_max_time - self.lookback_time
+
+            # Restrict injection vetoes to the current rolling window so
+            # background_time is not over-subtracted by stale chunk indices
+            if self.injection_veto_chunks:
+                win_min = int(min_end // self.analysis_block)
+                win_max = int(cur_max_time // self.analysis_block)
+                self.active_injection_veto_chunks = self.injection_veto_chunks & frozenset(range(win_min, win_max + 1))
+            all_loud = set(self.active_injection_veto_chunks)
+
             if self.ifar_remove_threshold is not None and self.loud_chunks:
-                # Prune loud chunks older than the lookback time: their
-                # triggers have expired from the singles buffers, so they
-                # must no longer reduce the background time
-                min_end = max(ctime0.max(), ctime1.max()) - self.lookback_time
+                # Prune dynamic loud chunks older than the lookback time:
+                # their triggers have expired from the singles buffers
                 self.loud_chunks = {
                     c for c in self.loud_chunks
                     if (c + 1) * self.analysis_block > min_end
                 }
-                # Remove coincs with a trigger inside a loud chunk in
-                # either detector before clustering, so they enter neither
-                # the background nor the foreground
-                if self.loud_chunks:
-                    loud = numpy.fromiter(self.loud_chunks,
-                                           dtype=numpy.int64)
-                    chunk0 = (ctime0 // self.analysis_block).astype(numpy.int64)
-                    chunk1 = (ctime1 // self.analysis_block).astype(numpy.int64)
-                    keep = ~(numpy.isin(chunk0, loud)
-                             | numpy.isin(chunk1, loud))
-                    good = numpy.flatnonzero(keep)
-                    if len(good) < len(cstat):
-                        logger.info("Removing %d coincs in loud chunks",
-                                    len(cstat) - len(good))
+                all_loud |= self.loud_chunks
+
+            # Remove coincs with a trigger inside any loud chunk in either
+            # detector before clustering, so they enter neither the
+            # background nor the foreground
+            if all_loud:
+                loud = numpy.fromiter(all_loud, dtype=numpy.int64)
+                chunk0 = (ctime0 // self.analysis_block).astype(numpy.int64)
+                chunk1 = (ctime1 // self.analysis_block).astype(numpy.int64)
+                keep = ~(numpy.isin(chunk0, loud) | numpy.isin(chunk1, loud))
+                good = numpy.flatnonzero(keep)
+                if len(good) < len(cstat):
+                    logger.info("Removing %d coincs in loud chunks",
+                                len(cstat) - len(good))
 
             logger.info("Clustering %s coincs", ppdets(self.ifos, "-"))
             cluster_window = self.analysis_block + 2 * self.time_window

@@ -123,7 +123,11 @@ class LiveEventManager(object):
         if self.run_snr_optimization:
             # preestimate the number of CPU cores that we can afford giving
             # to followup processes without slowing down the main search
-            bg_cores = len(tuple(itertools.combinations(self.trigg_ifos, 2)))
+            bg_combos = list(itertools.combinations(self.trigg_ifos, 2))
+            if len(self.trigg_ifos) == 3:
+                # also run a background estimator for the full triple (e.g. HLV)
+                bg_combos.append(tuple(self.trigg_ifos))
+            bg_cores = len(bg_combos)
             analysis_cores = 1 + bg_cores
             if platform.system() != 'Darwin':
                 available_cores = len(os.sched_getaffinity(0))
@@ -1182,10 +1186,14 @@ with ctx:
         for estim in sngl_estimator.values():
             estim.start_refresh_thread()
 
-    # Create double coincident background estimator
-    # for every pair of triggering interferometers
+    # Create a coincident background estimator for every pair of triggering
+    # interferometers, plus the full triple (e.g. HLV) when three detectors
+    # are triggering. The triple estimator produces only the full 3-ifo
+    # coincidences; the doubles are handled by the per-pair estimators.
     if args.enable_background_estimation and evnt.rank == 0:
-        ifo_combos = itertools.combinations(evnt.trigg_ifos, 2)
+        ifo_combos = list(itertools.combinations(evnt.trigg_ifos, 2))
+        if len(evnt.trigg_ifos) == 3:
+            ifo_combos.append(tuple(evnt.trigg_ifos))
         estimators = []
         for combo in ifo_combos:
             logging.info('Will calculate %s background', ppdets(combo, "-"))
@@ -1209,14 +1217,31 @@ with ctx:
         def get_coinc(results):
             c = estimators[my_coinc_id]
             r = c.add_singles(results)
-            logging.info('Coincs %i: %s-%s: %s in cbuffer', my_coinc_id,
-                         c.ifos[0], c.ifos[1], c.coincs.index)
+            logging.info('Coincs %i: %s: %s in cbuffer', my_coinc_id,
+                         ppdets(c.ifos, "-"), c.coincs.index)
             return r
 
         def output_background(_):
             estim = estimators[my_coinc_id]
             bg_time = conv.sec_to_year(estim.background_time)
             return estim.ifos, estim.coincs.data, bg_time
+
+        def gather_loud_chunks(_):
+            # Return this worker's estimator's current dynamic loud chunks
+            # (those marked by --ifar-remove-threshold). Returned as a plain
+            # set of ints so it can be pickled back to the root process.
+            c = estimators[my_coinc_id]
+            return set(c.loud_chunks)
+
+        def inject_loud_chunks(chunks):
+            # Merge a network-wide set of loud chunks into this worker's
+            # estimator. Because loud_chunks is applied by time chunk across
+            # all of an estimator's ifos, this makes a loud chunk found by any
+            # network censor the time-shifted background of every network.
+            # Stale chunks are pruned by each estimator on its next add_singles.
+            c = estimators[my_coinc_id]
+            c.loud_chunks |= set(chunks)
+            return None
 
         coinc_pool = BroadcastPool(len(estimators))
         coinc_pool.allmap(set_coinc_id, range(len(estimators)))
@@ -1370,6 +1395,23 @@ with ctx:
             # Look for coincident triggers and do background estimation
             if args.enable_background_estimation:
                 coinc_results = coinc_pool.broadcast(get_coinc, results)
+
+                # Share dynamic loud chunks across all background estimators
+                # (Design A, time-based). A loud zerolag coinc found by one
+                # network (e.g. HL) marks its analysis chunks loud; here we
+                # union those chunks over every estimator and inject the result
+                # back into all of them, so the time-shifted background of every
+                # network (HV, LV, HLV, ...) excludes the same loud times.
+                # Only the dynamic --ifar-remove-threshold chunks need this;
+                # injection-time vetoes are already identical across estimators
+                # because each reads the same --veto-injection-time-file.
+                if args.ifar_remove_threshold is not None and len(estimators) > 1:
+                    per_estimator = coinc_pool.broadcast(gather_loud_chunks,
+                                                         None)
+                    network_loud = set().union(*per_estimator) \
+                        if per_estimator else set()
+                    if network_loud:
+                        coinc_pool.broadcast(inject_loud_chunks, network_loud)
 
                 # Pick the best coinc in this chunk
                 best_coinc = Coincer.pick_best_coinc(coinc_results)

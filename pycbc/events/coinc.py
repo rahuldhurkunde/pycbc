@@ -28,6 +28,7 @@ coincident triggers.
 import numpy
 import logging
 import copy
+import itertools
 import time as timemod
 import threading
 
@@ -889,8 +890,9 @@ class LiveCoincTimeslideBackgroundEstimator(object):
             List of filenames that contain information used to construct
             various coincident statistics.
         ifos: list of strs
-            List of ifo names that are being analyzed. At the moment this must
-            be two items such as ['H1', 'L1'].
+            List of ifo names that are being analyzed. This must be either two
+            items such as ['H1', 'L1'] or three items such as
+            ['H1', 'L1', 'V1'].
         ifar_limit: float
             The largest inverse false alarm rate in years that we would like to
             calculate.
@@ -905,16 +907,6 @@ class LiveCoincTimeslideBackgroundEstimator(object):
         return_background: boolean
             If true, background triggers will also be included in the file
             output.
-        return_background_info: boolean
-            If true, per-coinc metadata (stat, end times, template id,
-            timeslide offset) for background triggers found in each update
-            are included in the coinc results under the
-            'background_coincs/' namespace.
-        injection_veto_chunks: list of int or None
-            Integer chunk indices (gps_time // analysis_block) that are
-            permanently excluded from background estimation regardless of
-            ifar_remove_threshold. Intended for injections whose times are
-            known in advance.
         boundary_veto_window: float
             If a loud trigger falls within this many seconds of a chunk
             boundary, the neighbouring chunk is also flagged as loud.
@@ -954,16 +946,50 @@ class LiveCoincTimeslideBackgroundEstimator(object):
         self.active_injection_veto_chunks = frozenset()
 
         self.ifos = ifos
-        if len(self.ifos) != 2:
-            raise ValueError("Only a two ifo analysis is supported at this time")
+        if len(self.ifos) not in (2, 3):
+            raise ValueError(
+                "Only two- or three-ifo analyses are supported at this time")
 
         self.lookback_time = (ifar_limit / conv.sec_to_year(1.) * timeslide_interval) ** 0.5
         self.buffer_size = int(numpy.ceil(self.lookback_time / analysis_block))
 
         self.dets = {ifo: Detector(ifo) for ifo in ifos}
 
-        self.time_window = self.dets[ifos[0]].light_travel_time_to_detector(
-            self.dets[ifos[1]]) + coinc_window_pad
+        # Light-travel-time-based coincidence window for every pair of ifos
+        self.pair_window = {}
+        for ifo_a, ifo_b in itertools.combinations(ifos, 2):
+            self.pair_window[frozenset((ifo_a, ifo_b))] = (
+                self.dets[ifo_a].light_travel_time_to_detector(self.dets[ifo_b])
+                + coinc_window_pad
+            )
+
+        if len(self.ifos) == 2:
+            self.time_window = self.pair_window[frozenset(ifos)]
+        else:
+            # Triple coincidence follows the fixed-ifo time-shift scheme of
+            # time_multi_coincidence: a single 'pivot' detector is time shifted
+            # relative to all others, which are held fixed relative to one
+            # another. The priority order assigns the roles so that, for the
+            # LIGO-Virgo network, H1 is the shifted pivot, L1 is the fixed
+            # reference and V1 is the dependent detector referenced to L1
+            # (the fixed set is {L1, V1}). Any triple background coincidence
+            # therefore requires an L1-V1 zerolag coincidence.
+            priority = ['H1', 'L1', 'V1', 'K1', 'I1']
+            ordered = sorted(
+                ifos,
+                key=lambda i: priority.index(i) if i in priority else len(priority)
+            )
+            self.pivot, self.fixed, self.dep = ordered[0], ordered[1], ordered[2]
+            # Used to size the clustering window
+            self.time_window = max(self.pair_window.values())
+            # to_shift / shift_vec in self.ifos order: -1 for the shifted
+            # (pivot) detector, 0 for all fixed detectors
+            self.shift_vec = [(-1 if ifo == self.pivot else 0)
+                              for ifo in self.ifos]
+            logger.info(
+                "Triple coincidence roles: pivot(shifted)=%s, fixed=%s, "
+                "dependent=%s", self.pivot, self.fixed, self.dep)
+
         self.coincs = CoincExpireBuffer(self.buffer_size, self.ifos)
 
         self.singles = {}
@@ -1047,9 +1073,7 @@ class LiveCoincTimeslideBackgroundEstimator(object):
         veto_file = getattr(args, 'veto_injection_time_file', None)
         if veto_file:
             times = numpy.atleast_1d(numpy.loadtxt(veto_file))
-            injection_veto_chunks = (
-                (times // analysis_chunk).astype(numpy.int64).tolist()
-            )
+            injection_veto_chunks = (times // analysis_chunk).astype(numpy.int64).tolist()
 
         return cls(num_templates, analysis_chunk,
                    args.ranking_statistic,
@@ -1097,49 +1121,12 @@ class LiveCoincTimeslideBackgroundEstimator(object):
             parser.error(f"The single ifo ranking stat {args.sngl_ranking} "
                          "requires --psd-variation.")
 
-    def _filter_loud_coincs(self, cstat, ctime0, ctime1, offsets, min_end):
-        """Remove background coincs that fall in loud or vetoed chunks.
-
-        Prunes stale dynamic loud chunks using min_end, combines them with
-        the active injection veto chunks, then returns an index array
-        selecting coincs not in any excluded chunk (background coincs are
-        removed; zerolag coincs are always kept). Returns slice(None) when
-        no filtering is needed so the caller can treat all cases uniformly.
-        """
-        # Prune dynamic loud chunks older than the lookback time: their
-        # triggers have expired from the singles buffers, so they must no
-        # longer reduce the background time.
-        self.loud_chunks = {
-            c for c in self.loud_chunks
-            if (c + 1) * self.analysis_block > min_end
-        }
-        all_loud = self.loud_chunks | self.active_injection_veto_chunks
-        if not all_loud:
-            return slice(None)
-        # Exclude background (timeslide) coincs in any loud/vetoed chunk;
-        # zerolag coincs are kept so candidates are always reported.
-        chunk0 = (ctime0 // self.analysis_block).astype(numpy.int64)
-        chunk1 = (ctime1 // self.analysis_block).astype(numpy.int64)
-        loud = numpy.fromiter(all_loud, dtype=numpy.int64)
-        in_loud_block = numpy.isin(chunk0, loud) | numpy.isin(chunk1, loud)
-        good = numpy.flatnonzero(~(in_loud_block & (offsets != 0)))
-        if len(good) < len(cstat):
-            logger.info(
-                "Removing %d background coincs in loud chunks",
-                len(cstat) - len(good),
-            )
-        return good
-
     @property
     def background_time(self):
-        """Return the amount of background time that the buffers contain.
-
-        Excluded chunks — dynamic loud chunks (IFAR above
-        ifar_remove_threshold) and injection veto chunks — are not counted
-        towards the background time because their triggers are removed from
-        coincidence formation.
-        """
+        """Return the amount of background time that the buffers contain"""
         time = 1.0 / self.timeslide_interval
+        # Dirty chunks are excluded from coincidence formation in both
+        # detectors, so they do not contribute to the background time
         all_loud = self.loud_chunks | self.active_injection_veto_chunks
         loud_time = len(all_loud) * self.analysis_block
         for ifo in self.singles:
@@ -1286,6 +1273,9 @@ class LiveCoincTimeslideBackgroundEstimator(object):
         coinc_results: dict of arrays
             A dictionary of arrays containing the coincident results.
         """
+        if len(self.ifos) == 3:
+            return self._find_coincs_triple(results, valid_ifos)
+
         # For each new single detector trigger find the allowed coincidences
         # Record the template and the index of the single trigger that forms
         # each coincidence
@@ -1421,43 +1411,50 @@ class LiveCoincTimeslideBackgroundEstimator(object):
             offsets = numpy.concatenate(offsets)
             ctime0 = numpy.concatenate(ctimes[self.ifos[0]]).astype(numpy.float64)
             ctime1 = numpy.concatenate(ctimes[self.ifos[1]]).astype(numpy.float64)
-            good = slice(None)
+            good = None
             cur_max_time = max(ctime0.max(), ctime1.max())
             min_end = cur_max_time - self.lookback_time
 
             # Restrict injection vetoes to the current rolling window so
-            # background_time is not over-subtracted by stale chunk indices.
+            # background_time is not over-subtracted by stale chunk indices
             if self.injection_veto_chunks:
                 win_min = int(min_end // self.analysis_block)
                 win_max = int(cur_max_time // self.analysis_block)
-                self.active_injection_veto_chunks = (
-                    self.injection_veto_chunks
-                    & frozenset(range(win_min, win_max + 1))
-                )
+                self.active_injection_veto_chunks = self.injection_veto_chunks & frozenset(range(win_min, win_max + 1))
 
-            any_loud = (
-                (self.ifar_remove_threshold is not None and self.loud_chunks)
-                or self.active_injection_veto_chunks
-            )
-            if any_loud:
-                good = self._filter_loud_coincs(
-                    cstat, ctime0, ctime1, offsets, min_end
-                )
+            if self.ifar_remove_threshold is not None and self.loud_chunks:
+                # Prune dynamic loud chunks older than the lookback time:
+                # their triggers have expired from the singles buffers
+                self.loud_chunks = {
+                    c for c in self.loud_chunks
+                    if (c + 1) * self.analysis_block > min_end
+                }
+
+            # Exclude background (timeslide) coincs in any loud block.
+            # Zerolag coincs are kept in both cases so candidates are always
+            # reported regardless of whether the block is loud.
+            all_loud = self.loud_chunks | self.active_injection_veto_chunks
+            if all_loud:
+                chunk0 = (ctime0 // self.analysis_block).astype(numpy.int64)
+                chunk1 = (ctime1 // self.analysis_block).astype(numpy.int64)
+                loud = numpy.fromiter(all_loud, dtype=numpy.int64)
+                in_loud_block = numpy.isin(chunk0, loud) | numpy.isin(chunk1, loud)
+                good = numpy.flatnonzero(~(in_loud_block & (offsets != 0)))
+                if len(good) < len(cstat):
+                    logger.info("Removing %d background coincs in loud chunks",
+                                len(cstat) - len(good))
 
             logger.info("Clustering %s coincs", ppdets(self.ifos, "-"))
             cluster_window = self.analysis_block + 2 * self.time_window
-            good_cstat = cstat[good]
-            if len(good_cstat):
-                sub = cluster_coincs(
-                    good_cstat,
-                    ctime0[good],
-                    ctime1[good],
-                    offsets[good],
-                    self.timeslide_interval,
-                    cluster_window,
-                    method='cython',
-                )
-                cidx = numpy.arange(len(cstat), dtype=numpy.int64)[good][sub]
+            if good is None:
+                cidx = cluster_coincs(cstat, ctime0, ctime1, offsets,
+                                      self.timeslide_interval,
+                                      cluster_window, method='cython')
+            elif len(good):
+                cidx = good[cluster_coincs(cstat[good], ctime0[good],
+                                           ctime1[good], offsets[good],
+                                           self.timeslide_interval,
+                                           cluster_window, method='cython')]
             else:
                 cidx = numpy.array([], dtype=numpy.int64)
 
@@ -1480,13 +1477,11 @@ class LiveCoincTimeslideBackgroundEstimator(object):
                         self.analysis_block,
                         self.boundary_veto_window,
                     )
-                    for chunk in chunks:
-                        if chunk in self.loud_chunks:
-                            continue
+                    for chunk in chunks - self.loud_chunks:
                         self.loud_chunks.add(chunk)
                         new_loud.append(chunk)
                         logger.info(
-                            "Loud chunk [%d, %d): zerolag coinc with "
+                            "Dirty chunk [%d, %d): zerolag coinc with "
                             "IFAR %.2f above %.2f",
                             chunk * self.analysis_block,
                             (chunk + 1) * self.analysis_block,
@@ -1508,9 +1503,9 @@ class LiveCoincTimeslideBackgroundEstimator(object):
             num_zerolag = zerolag_idx.sum()
             num_background = bkg_idx.sum()
 
-            # Capture per-coinc metadata for offline diagnostics.
-            # offsets is already re-indexed to cidx, so offsets[bkg_idx]
-            # aligns with cstat[cidx][bkg_idx].
+            # Capture per-coinc trigger metadata for offline diagnostics.
+            # offsets was already re-indexed to cidx at line above, so
+            # offsets[bkg_idx] aligns with cstat[cidx][bkg_idx].
             if self.return_background_info and num_background > 0:
                 bkg_cidx = cidx[bkg_idx]
                 _bkg_info = {
@@ -1520,6 +1515,8 @@ class LiveCoincTimeslideBackgroundEstimator(object):
                     'template_id': template_ids[bkg_cidx].astype(numpy.int32),
                     'offset':      offsets[bkg_idx],
                 }
+            else:
+                _bkg_info = None
         elif len(valid_ifos) > 0:
             self.coincs.increment(valid_ifos)
 
@@ -1553,19 +1550,433 @@ class LiveCoincTimeslideBackgroundEstimator(object):
         if self.return_background:
             coinc_results['background/stat'] = self.coincs.data
 
-        # Per-coinc metadata (end times, template id, offset) for this
-        # update's background triggers; only when return_background_info=True.
+        # Per-coinc trigger metadata for offline tracing (end_time per IFO,
+        # template_id, timeslide offset) — only populated when
+        # return_background_info=True was set at construction.
         if _bkg_info is not None:
             coinc_results['background_coincs/stat'] = _bkg_info['stat']
-            coinc_results[f'background_coincs/{self.ifos[0]}/end_time'] = (
+            coinc_results[f'background_coincs/{self.ifos[0]}/end_time'] = \
                 _bkg_info['end_time_0']
-            )
-            coinc_results[f'background_coincs/{self.ifos[1]}/end_time'] = (
+            coinc_results[f'background_coincs/{self.ifos[1]}/end_time'] = \
                 _bkg_info['end_time_1']
-            )
-            coinc_results['background_coincs/template_id'] = (
+            coinc_results['background_coincs/template_id'] = \
                 _bkg_info['template_id']
+            coinc_results['background_coincs/offset'] = _bkg_info['offset']
+
+        return num_background, coinc_results
+
+    def _win(self, ifo1, ifo2):
+        """Coincidence time window between two ifos (light travel time + pad)."""
+        return self.pair_window[frozenset((ifo1, ifo2))]
+
+    def _find_coincs_triple(self, results, valid_ifos):
+        """Look for triple-detector coincidences within the set of single
+        triggers.
+
+        This follows the fixed-ifo time-shift scheme of
+        :func:`time_multi_coincidence`: the single 'pivot' detector
+        (``self.pivot``) is time shifted relative to all others, which are held
+        fixed relative to one another. Coincidence is found in two stages: a
+        base ``pivot``-``fixed`` coincidence (which carries the time slide),
+        followed by requiring the ``dependent`` detector to be coincident, in
+        the fixed frame, with both. Because only the pivot is shifted, every
+        triple background coincidence requires a ``fixed``-``dependent`` zerolag
+        coincidence.
+
+        Only full 3-ifo coincidences are produced here; 2-ifo coincidences are
+        handled by the separate per-pair estimators.
+
+        The ``ifar-remove-threshold``, ``boundary-veto-window`` and
+        injection-time-veto features are applied identically to the two-ifo
+        path: background (time-shifted) coincs whose triggers fall in any loud
+        or injection-vetoed chunk (in any detector) are excluded, while zerolag
+        candidates are always reported.
+
+        Parameters
+        ----------
+        results: dict
+            Dictionary of dictionaries indexed by ifo, as in
+            :meth:`_find_coincs`.
+        valid_ifos: list of strs
+            List of ifos for which new triggers might exist.
+
+        Returns
+        -------
+        num_background: int
+            Number of time shifted coincidences found.
+        coinc_results: dict of arrays
+            A dictionary of arrays containing the coincident results.
+        """
+        pivot, fixed, dep = self.pivot, self.fixed, self.dep
+        step = self.timeslide_interval
+
+        # Accumulators: one entry appended per processed new trigger
+        cstat = [[]]
+        offsets = []
+        ctimes = {ifo: [] for ifo in self.ifos}
+        single_expire = {ifo: [] for ifo in self.ifos}
+        template_ids = [[]]
+        trigger_ids = {ifo: [[]] for ifo in self.ifos}
+
+        def record(template, mchirp, slide, anchor_ifo, anchor_stat,
+                   anchor_time, other_idx):
+            """Compute the ranking statistic for a batch of triples sharing one
+            'anchor' (newly added) trigger and store the results.
+
+            other_idx maps each non-anchor ifo to its array of buffer indices
+            (into the per-template ring buffer) for the coincident triggers.
+            """
+            n = len(slide)
+            if n == 0:
+                return
+
+            # Broadcast the anchor's single-detector statistic to every coinc
+            if self.trig_stat_memory is None:
+                self.trig_stat_memory = numpy.zeros(1, dtype=anchor_stat.dtype)
+            while len(self.trig_stat_memory) < n:
+                self.trig_stat_memory = numpy.resize(
+                    self.trig_stat_memory, len(self.trig_stat_memory) * 2
+                )
+            self.trig_stat_memory[:n] = anchor_stat
+
+            # Assemble single-detector stats for all ifos and rank the coincs
+            sngls_list = []
+            for ifo in self.ifos:
+                if ifo == anchor_ifo:
+                    sngls_list.append([ifo, self.trig_stat_memory[:n]])
+                else:
+                    dat = self.singles[ifo].data(template)
+                    sngls_list.append([ifo, dat['stat'][other_idx[ifo]]])
+
+            c = self.stat_calculator.rank_stat_coinc(
+                sngls_list,
+                slide,
+                step,
+                self.shift_vec,
+                time_addition=self.coinc_window_pad,
+                mchirp=mchirp,
+                dets=self.dets
             )
+
+            offsets.append(slide)
+            cstat.append(c)
+            template_ids.append(numpy.zeros(n) + template)
+
+            for ifo in self.ifos:
+                if ifo == anchor_ifo:
+                    # The anchor was just added, so it is in the last buffer
+                    # position: mark with -1 so slicing picks the right point
+                    ctimes[ifo].append(numpy.full(n, anchor_time,
+                                                  dtype=numpy.float64))
+                    single_expire[ifo].append(
+                        numpy.full(n, self.singles[ifo].time - 1,
+                                   dtype=numpy.int32)
+                    )
+                    trigger_ids[ifo].append(numpy.zeros(n) - 1)
+                else:
+                    idx = other_idx[ifo]
+                    dat = self.singles[ifo].data(template)
+                    ctimes[ifo].append(dat['end_time'][idx].astype(numpy.float64))
+                    single_expire[ifo].append(
+                        self.singles[ifo].expire_vector(template)[idx]
+                    )
+                    trigger_ids[ifo].append(idx)
+
+        def match_dep(aligned_pivot, fixed_raw, dep_times, template):
+            """Given base pivot-fixed coincs (aligned into the fixed frame),
+            find the single dependent-ifo trigger coincident with both.
+
+            Returns a boolean survival mask over the base coincs and the array
+            of dependent-ifo buffer indices for the survivors.
+            """
+            ndep = len(dep_times)
+            nbase = len(aligned_pivot)
+            if ndep == 0 or nbase == 0:
+                return (numpy.zeros(nbase, dtype=bool),
+                        numpy.array([], dtype=numpy.int32))
+
+            w_df = self._win(dep, fixed)
+            w_dp = self._win(dep, pivot)
+
+            tsort = dep_times.argsort()
+            time1 = dep_times[tsort]
+
+            # Candidate dependent trigger from coincidence with the fixed ifo
+            left = time1.searchsorted(fixed_raw - w_df)
+            right = time1.searchsorted(fixed_raw + w_df)
+            has = right > left
+            if numpy.any((right - left) > 1):
+                logger.warning(
+                    'Triggers in %s are closer than the coincidence window; '
+                    '1 or more triple coincs will be discarded. This is a '
+                    'warning, not an error.', dep
+                )
+
+            # Verify the SAME dependent trigger is coincident with the aligned
+            # pivot. 'left' is clipped only to index safely; entries where
+            # has is False are removed by the final mask.
+            cand = numpy.clip(left, 0, ndep - 1)
+            dep_t = time1[cand]
+            keep = has & (numpy.abs(dep_t - aligned_pivot) < w_dp)
+            dep_idx = tsort[cand[keep]].astype(numpy.int32)
+            return keep, dep_idx
+
+        # Process new triggers from each ifo in turn. A triple must contain at
+        # least one new trigger; anchoring on every ifo with new triggers (and
+        # searching the full buffers of the other two, which already include
+        # this batch's new triggers) catches them all. Triples found more than
+        # once are removed by clustering.
+        for anchor_ifo in valid_ifos:
+            others = [ifo for ifo in self.ifos if ifo != anchor_ifo]
+            trigs = results[anchor_ifo]
+            mchirps = conv.mchirp_from_mass1_mass2(
+                trigs['mass1'], trigs['mass2']
+            )
+
+            for i in range(len(trigs['end_time'])):
+                anchor_stat = trigs['stat'][i]
+                anchor_time = trigs['end_time'][i]
+                template = trigs['template_id'][i]
+                mchirp = mchirps[i]
+
+                pivot_dat = self.singles[pivot].data(template)
+                fixed_dat = self.singles[fixed].data(template)
+                dep_dat = self.singles[dep].data(template)
+                pivot_t = pivot_dat['end_time']
+                fixed_t = fixed_dat['end_time']
+                dep_t = dep_dat['end_time']
+
+                if anchor_ifo == pivot:
+                    # Base coinc: this pivot trigger vs all stored fixed triggers
+                    if len(fixed_t) == 0:
+                        continue
+                    _, lidx, slide = time_coincidence(
+                        numpy.array(anchor_time, ndmin=1, dtype=numpy.float64),
+                        fixed_t, self._win(pivot, fixed), step
+                    )
+                    aligned_pivot = anchor_time - step * slide
+                    fixed_raw = fixed_t[lidx]
+                    keep, dep_idx = match_dep(aligned_pivot, fixed_raw,
+                                              dep_t, template)
+                    record(template, mchirp, slide[keep], anchor_ifo,
+                           anchor_stat, anchor_time,
+                           {fixed: lidx[keep], dep: dep_idx})
+
+                elif anchor_ifo == fixed:
+                    # Base coinc: all stored pivot triggers vs this fixed trigger
+                    if len(pivot_t) == 0:
+                        continue
+                    hidx, _, slide = time_coincidence(
+                        pivot_t,
+                        numpy.array(anchor_time, ndmin=1, dtype=numpy.float64),
+                        self._win(pivot, fixed), step
+                    )
+                    aligned_pivot = pivot_t[hidx] - step * slide
+                    fixed_raw = numpy.full(len(hidx), anchor_time,
+                                           dtype=numpy.float64)
+                    keep, dep_idx = match_dep(aligned_pivot, fixed_raw,
+                                              dep_t, template)
+                    record(template, mchirp, slide[keep], anchor_ifo,
+                           anchor_stat, anchor_time,
+                           {pivot: hidx[keep], dep: dep_idx})
+
+                else:
+                    # anchor_ifo == dep: this dependent trigger plus a base
+                    # pivot-fixed coinc among stored triggers. The dependent
+                    # must be zerolag-coincident with the fixed ifo, so restrict
+                    # the fixed triggers to that window first.
+                    if len(pivot_t) == 0 or len(fixed_t) == 0:
+                        continue
+                    w_df = self._win(dep, fixed)
+                    lc = numpy.flatnonzero(
+                        numpy.abs(fixed_t - anchor_time) < w_df
+                    )
+                    if len(lc) == 0:
+                        continue
+                    hidx, lloc, slide = time_coincidence(
+                        pivot_t, fixed_t[lc], self._win(pivot, fixed), step
+                    )
+                    aligned_pivot = pivot_t[hidx] - step * slide
+                    # Fixed already within window of the dependent trigger;
+                    # additionally require the aligned pivot to match it
+                    keep = numpy.abs(aligned_pivot - anchor_time) \
+                        < self._win(dep, pivot)
+                    record(template, mchirp, slide[keep], anchor_ifo,
+                           anchor_stat, anchor_time,
+                           {pivot: hidx[keep], fixed: lc[lloc[keep]]})
+
+        cstat = numpy.concatenate(cstat)
+        template_ids = numpy.concatenate(template_ids).astype(numpy.int32)
+        for ifo in self.ifos:
+            trigger_ids[ifo] = numpy.concatenate(
+                trigger_ids[ifo]).astype(numpy.int32)
+
+        logger.info(
+            "%s: %s background and zerolag triple coincs",
+            ppdets(self.ifos, "-"), len(cstat)
+        )
+
+        num_zerolag = 0
+        num_background = 0
+        _bkg_info = None
+
+        if len(cstat) > 0:
+            offsets = numpy.concatenate(offsets)
+            ctime = {ifo: numpy.concatenate(ctimes[ifo]).astype(numpy.float64)
+                     for ifo in self.ifos}
+            good = None
+            cur_max_time = max(ctime[ifo].max() for ifo in self.ifos)
+            min_end = cur_max_time - self.lookback_time
+
+            # Restrict injection vetoes to the current rolling window so
+            # background_time is not over-subtracted by stale chunk indices
+            if self.injection_veto_chunks:
+                win_min = int(min_end // self.analysis_block)
+                win_max = int(cur_max_time // self.analysis_block)
+                self.active_injection_veto_chunks = self.injection_veto_chunks & frozenset(range(win_min, win_max + 1))
+
+            if self.ifar_remove_threshold is not None and self.loud_chunks:
+                # Prune dynamic loud chunks older than the lookback time:
+                # their triggers have expired from the singles buffers
+                self.loud_chunks = {
+                    c for c in self.loud_chunks
+                    if (c + 1) * self.analysis_block > min_end
+                }
+
+            # Exclude background (timeslide) coincs in any loud block.
+            # Zerolag coincs are kept in both cases so candidates are always
+            # reported regardless of whether the block is loud.
+            all_loud = self.loud_chunks | self.active_injection_veto_chunks
+            if all_loud:
+                loud = numpy.fromiter(all_loud, dtype=numpy.int64)
+                in_loud_block = None
+                for ifo in self.ifos:
+                    chunk = (ctime[ifo] // self.analysis_block).astype(numpy.int64)
+                    m = numpy.isin(chunk, loud)
+                    in_loud_block = m if in_loud_block is None \
+                        else (in_loud_block | m)
+                good = numpy.flatnonzero(~(in_loud_block & (offsets != 0)))
+                if len(good) < len(cstat):
+                    logger.info(
+                        "Removing %d background triple coincs in loud chunks",
+                        len(cstat) - len(good))
+
+            logger.info("Clustering %s triple coincs", ppdets(self.ifos, "-"))
+            cluster_window = self.analysis_block + 2 * self.time_window
+            time_coincs = tuple(ctime[ifo] for ifo in self.ifos)
+            if good is None:
+                cidx = cluster_coincs_multiifo(
+                    cstat, time_coincs, offsets, self.timeslide_interval,
+                    cluster_window, method='cython')
+            elif len(good):
+                time_coincs_good = tuple(ctime[ifo][good] for ifo in self.ifos)
+                cidx = good[cluster_coincs_multiifo(
+                    cstat[good], time_coincs_good, offsets[good],
+                    self.timeslide_interval, cluster_window, method='cython')]
+            else:
+                cidx = numpy.array([], dtype=numpy.int64)
+
+            offsets = offsets[cidx]
+            zerolag_idx = (offsets == 0)
+            bkg_idx = (offsets != 0)
+
+            if self.ifar_remove_threshold is not None:
+                # Mark the chunks containing the triggers of any loud zerolag
+                # candidate as loud. The candidate itself is still reported, but
+                # coincs involving these chunks are excluded from the background
+                # from now on.
+                new_loud = []
+                for idx in cidx[zerolag_idx]:
+                    ifar_val, _ = self.ifar(cstat[idx])
+                    if ifar_val <= self.ifar_remove_threshold:
+                        continue
+                    chunks = chunk_indices_with_boundary(
+                        [ctime[ifo][idx] for ifo in self.ifos],
+                        self.analysis_block,
+                        self.boundary_veto_window,
+                    )
+                    for chunk in chunks - self.loud_chunks:
+                        self.loud_chunks.add(chunk)
+                        new_loud.append(chunk)
+                        logger.info(
+                            "Dirty chunk [%d, %d): zerolag triple coinc with "
+                            "IFAR %.2f above %.2f",
+                            chunk * self.analysis_block,
+                            (chunk + 1) * self.analysis_block,
+                            ifar_val, self.ifar_remove_threshold
+                        )
+                if new_loud:
+                    # Drop this update's background coincs involving the
+                    # newly loud chunks before they enter the buffer
+                    nd = numpy.array(new_loud, dtype=numpy.int64)
+                    inloud = None
+                    for ifo in self.ifos:
+                        tc = (ctime[ifo][cidx] // self.analysis_block).astype(
+                            numpy.int64)
+                        m = numpy.isin(tc, nd)
+                        inloud = m if inloud is None else (inloud | m)
+                    bkg_idx &= ~inloud
+
+            for ifo in self.ifos:
+                single_expire[ifo] = numpy.concatenate(single_expire[ifo])
+                single_expire[ifo] = single_expire[ifo][cidx][bkg_idx]
+
+            self.coincs.add(cstat[cidx][bkg_idx], single_expire, valid_ifos)
+            num_zerolag = zerolag_idx.sum()
+            num_background = bkg_idx.sum()
+
+            # Capture per-coinc trigger metadata for offline diagnostics.
+            if self.return_background_info and num_background > 0:
+                bkg_cidx = cidx[bkg_idx]
+                _bkg_info = {
+                    'stat':        cstat[bkg_cidx],
+                    'end_time':    {ifo: ctime[ifo][bkg_cidx]
+                                    for ifo in self.ifos},
+                    'template_id': template_ids[bkg_cidx].astype(numpy.int32),
+                    'offset':      offsets[bkg_idx],
+                }
+            else:
+                _bkg_info = None
+        elif len(valid_ifos) > 0:
+            self.coincs.increment(valid_ifos)
+
+        # Collect coinc results for saving
+        coinc_results = {}
+        if num_zerolag > 0:
+            idx = cidx[zerolag_idx][0]
+            zerolag_cstat = cstat[cidx][zerolag_idx]
+            ifar, ifar_sat = self.ifar(zerolag_cstat[0])
+            zerolag_results = {
+                'foreground/ifar': ifar,
+                'foreground/ifar_saturated': ifar_sat,
+                'foreground/stat': zerolag_cstat,
+                'foreground/type': '-'.join(self.ifos)
+            }
+            template = template_ids[idx]
+            for ifo in self.ifos:
+                trig_id = trigger_ids[ifo][idx]
+                single_data = self.singles[ifo].data(template)[trig_id]
+                for key in single_data.dtype.names:
+                    path = f'foreground/{ifo}/{key}'
+                    zerolag_results[path] = single_data[key]
+            coinc_results.update(zerolag_results)
+
+        coinc_results['background/time'] = numpy.array([self.background_time])
+        coinc_results['background/count'] = len(self.coincs.data)
+
+        if self.return_background:
+            coinc_results['background/stat'] = self.coincs.data
+
+        # Per-coinc trigger metadata for offline tracing (end_time per IFO,
+        # template_id, timeslide offset) — only populated when
+        # return_background_info=True was set at construction.
+        if _bkg_info is not None:
+            coinc_results['background_coincs/stat'] = _bkg_info['stat']
+            for ifo in self.ifos:
+                coinc_results[f'background_coincs/{ifo}/end_time'] = \
+                    _bkg_info['end_time'][ifo]
+            coinc_results['background_coincs/template_id'] = \
+                _bkg_info['template_id']
             coinc_results['background_coincs/offset'] = _bkg_info['offset']
 
         return num_background, coinc_results
@@ -1618,8 +2029,8 @@ class LiveCoincTimeslideBackgroundEstimator(object):
             # Calculate zerolag and background coincidences
             _, coinc_results = self._find_coincs(results, valid_ifos=valid_ifos)
 
-        # record if a coinc is possible in this chunk
-        if len(valid_ifos) == 2:
+        # record if a coinc is possible in this chunk (all network ifos present)
+        if len(valid_ifos) == len(self.ifos):
             coinc_results['coinc_possible'] = True
 
         return coinc_results

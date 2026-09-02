@@ -1126,6 +1126,7 @@ _filter_time_lengths["IMRPhenomD"] = imrphenomd_length_in_time
 _filter_time_lengths["IMRPhenomPv2"] = imrphenomd_length_in_time
 _filter_time_lengths["IMRPhenomD_NRTidal"] = imrphenomd_length_in_time
 _filter_time_lengths["IMRPhenomPv2_NRTidal"] = imrphenomd_length_in_time
+_filter_time_lengths["IMRPhenomXAS"] = imrphenomd_length_in_time
 _filter_time_lengths["IMRPhenomHM"] = imrphenomhm_length_in_time
 _filter_time_lengths["IMRPhenomPv3HM"] = imrphenomhm_length_in_time
 _filter_time_lengths["IMRPhenomXHM"] = imrphenomhm_length_in_time

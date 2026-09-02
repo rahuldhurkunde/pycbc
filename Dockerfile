@@ -91,6 +91,22 @@ ENV PATH="/usr/local/bin:/usr/bin:/bin:/lib64/openmpi/bin/bin"
 #   docker <cmd> -e LAL_DATA_PATH="/my/new/path"
 ENV LAL_DATA_PATH="/cvmfs/software.igwn.org/pycbc/lalsuite-extra/current/share/lalsimulation:/opt/pycbc/pycbc-software/share/lal-data"
 
+COPY . /opt/pycbc/src/pycbc
+WORKDIR /opt/pycbc/src/pycbc
+RUN <<EOF
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python -m pip install -r requirements-igwn.txt
+python -m pip install -r companion.txt
+python -m pip install .
+# Fail the build early if the MPI stack or the executable is broken
+python -c "from mpi4py import MPI; import pycbc, schwimmbad; print('pycbc', pycbc.version.version)"
+pycbc_live --help > /dev/null && echo "pycbc_live OK"
+dnf clean all
+python -m pip cache purge
+EOF
+WORKDIR /
+
 # When the container is started with
 #   docker run -it pycbc/pycbc-el8:latest
 # the default is to start a login shell as the pycbc user.

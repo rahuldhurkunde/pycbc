@@ -94,14 +94,21 @@ ENV LAL_DATA_PATH="/cvmfs/software.igwn.org/pycbc/lalsuite-extra/current/share/l
 COPY . /opt/pycbc/src/pycbc
 WORKDIR /opt/pycbc/src/pycbc
 RUN <<EOF
+set -eux
+# The base image ships a broken sphinxcontrib-jsmath py3.7 nspkg .pth that crashes
+# pip's PEP517 build-isolation subprocess ("No module named 'json'"). Drop it.
+rm -f /usr/local/lib/python3.11/site-packages/sphinxcontrib_jsmath-*-nspkg.pth
+# Drop any stale generated version file copied in from a dirty local checkout.
+rm -f pycbc/version.py
 python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
-python -m pip install -r requirements-igwn.txt
-python -m pip install -r companion.txt
-python -m pip install .
+python -m pip install --no-cache-dir -r requirements.txt
+# Build deps (cython, numpy>=2, setuptools>=70, wheel) are already in the base image;
+# --no-build-isolation avoids re-triggering the broken-.pth class of problem.
+python -m pip install --no-cache-dir --no-build-isolation .
 # Fail the build early if the MPI stack or the executable is broken
 python -c "from mpi4py import MPI; import pycbc, schwimmbad; print('pycbc', pycbc.version.version)"
-pycbc_live --help > /dev/null && echo "pycbc_live OK"
+pycbc_live --help > /dev/null
+echo "pycbc_live OK"
 dnf clean all
 python -m pip cache purge
 EOF

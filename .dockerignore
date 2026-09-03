@@ -1,0 +1,10 @@
+# Keep the Docker build context clean when building from a dirty local checkout.
+# (CI's actions/checkout is already clean; this mainly protects local `docker build`.)
+# NOTE: .git is intentionally NOT ignored — setup.py reads it for the version string.
+build/
+dist/
+*.egg-info/
+**/*.so
+.pytest_cache/
+__pycache__/
+*.pyc

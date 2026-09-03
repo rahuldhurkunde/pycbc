@@ -103,9 +103,8 @@ jobs:
           set -eux
           sha_short=$(git rev-parse --short HEAD)
 
-          apptainer build \
-            --mksquashfs-args "-comp zstd -Xcompression-level 3 -processors 4" \
-            image.sif "docker://${IMAGE}:latest"
+          export MKSQUASHFS_ARGS='-comp zstd -Xcompression-level 3 -processors 4'
+          apptainer build image.sif "docker://${IMAGE}:latest"
 
           ls -lh image.sif
           apptainer inspect image.sif || true

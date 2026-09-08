@@ -87,6 +87,12 @@ if [ "$PYCBC_TEST_TYPE" = "search" ] || [ -z ${PYCBC_TEST_TYPE+x} ]; then
     test_result
     popd
 
+    # run PyCBC Live Ratio-Filter Dechirping test
+    pushd examples/live_fir
+    bash -e run.sh
+    test_result
+    popd
+
     # run pycbc_multi_inspiral (PyGRB) test
     pushd examples/multi_inspiral
     bash -e gw170817_h.sh

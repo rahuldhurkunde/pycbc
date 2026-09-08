@@ -25,6 +25,7 @@ from pycbc import fft, version, waveform, scheme, makedir
 from pycbc.types import MultiDetOptionAction, MultiDetMultiColonOptionAction
 from pycbc.filter import LiveBatchMatchedFilter, compute_followup_snr_series
 from pycbc.filter import followup_event_significance
+from pycbc.filter.matchedfilter_ratio_live import RatioLiveBatchMatchedFilter
 from pycbc.strain import StrainBuffer
 from pycbc.events.ranking import newsnr
 from pycbc.events.coinc import LiveCoincTimeslideBackgroundEstimator as Coincer
@@ -817,8 +818,30 @@ parser = argparse.ArgumentParser(description=__doc__)
 pycbc.waveform.bank.add_approximant_arg(parser)
 parser.add_argument('--verbose', action='count')
 parser.add_argument('--version', action='version', version=version.git_verbose_msg)
-parser.add_argument('--bank-file', required=True,
+parser.add_argument('--bank-file',
                     help="Template bank file in XML or HDF format")
+parser.add_argument('--ratio-bank-file',
+                    help="Hierarchical Ratio-Filter Dechirping bank (HDF, built "
+                         "by pycbc_fir_bank / make_fir_bank.py). Mutually "
+                         "exclusive with --bank-file: only the sparse coarse "
+                         "bank is matched-filtered and every fine template's "
+                         "SNR is reconstructed with a short FIR filter.")
+parser.add_argument('--fir-length', type=int, default=32768,
+                    help="FFT block length for the ratio-stage FIR convolution; "
+                         "must exceed the valid analysis region "
+                         "(analysis_chunk * sample_rate) plus twice the longest "
+                         "FIR filter (--ratio-bank-file only).")
+parser.add_argument('--fir-batch-size', type=int, default=64,
+                    help="Number of fine FIR filters to inverse-transform at "
+                         "once (--ratio-bank-file only).")
+parser.add_argument('--template-normalization-method',
+                    choices=('parseval', 'precalculated_sigma', 'mchirp'),
+                    default='parseval',
+                    help="How each fine template's SNR normalization (sigma) is "
+                         "obtained (--ratio-bank-file only). 'parseval' recomputes "
+                         "it under the current PSD (arXiv:2601.18835 Eq. 6); the "
+                         "others scale the coarse template's live sigma by a "
+                         "fixed build-time ratio.")
 parser.add_argument('--low-frequency-cutoff', help="low frequency cutoff", type=int)
 parser.add_argument('--sample-rate', help="output sample rate", type=int)
 parser.add_argument('--chisq-bins', help="Number of chisq bins")
@@ -1084,14 +1107,27 @@ fft.from_cli(args)
 valid_pad = args.analysis_chunk
 total_pad = args.trim_padding * 2 + valid_pad
 lfc = None if args.enable_bank_start_frequency else args.low_frequency_cutoff
-bank = waveform.LiveFilterBank(
-    args.bank_file,
-    args.sample_rate,
-    total_pad,
-    low_frequency_cutoff=lfc,
-    approximant=args.approximant,
-    increment=args.increment
-)
+if bool(args.bank_file) == bool(args.ratio_bank_file):
+    parser.error('provide exactly one of --bank-file / --ratio-bank-file')
+ratio_mode = args.ratio_bank_file is not None
+if ratio_mode:
+    bank = waveform.LiveRatioFilterBank(
+        args.ratio_bank_file,
+        args.sample_rate,
+        total_pad,
+        low_frequency_cutoff=lfc,
+        approximant=args.approximant,
+        increment=args.increment
+    )
+else:
+    bank = waveform.LiveFilterBank(
+        args.bank_file,
+        args.sample_rate,
+        total_pad,
+        low_frequency_cutoff=lfc,
+        approximant=args.approximant,
+        increment=args.increment
+    )
 if bank.min_f_lower < args.low_frequency_cutoff:
     parser.error('--low-frequency-cutoff ({} Hz) must not be larger than the '
                  'minimum f_lower across all templates '
@@ -1140,7 +1176,31 @@ with ctx:
         print(e)
         exit()
 
-    if evnt.rank > 0:
+    if evnt.rank > 0 and ratio_mode:
+        # Partition the *coarse* reference bank across filtering ranks; each
+        # rank owns its coarse templates plus every fine template anchored to
+        # them, so the FIR reconstruction stays local (no inter-rank comm).
+        cmc = conv.mchirp_from_mass1_mass2(
+            bank.coarse_bank.table['mass1'][bank.coarse_indices],
+            bank.coarse_bank.table['mass2'][bank.coarse_indices])
+        coarse_sorted = bank.coarse_indices[numpy.argsort(cmc)]
+        my_coarse = coarse_sorted[evnt.rank - 1::evnt.size - 1]
+        check_max_length(args, [bank.get_coarse_template(int(c))
+                                for c in my_coarse])
+        mf = RatioLiveBatchMatchedFilter(
+            bank,
+            my_coarse,
+            args.snr_threshold,
+            args.chisq_bins,
+            sg_chisq,
+            fir_length=args.fir_length,
+            batch_size=args.fir_batch_size,
+            snr_abort_threshold=args.snr_abort_threshold,
+            newsnr_threshold=args.newsnr_threshold,
+            max_triggers_in_batch=args.max_triggers_in_batch,
+            template_normalization_method=args.template_normalization_method,
+        )
+    elif evnt.rank > 0:
         bank.table.sort(order='mchirp')
         waveforms = list(bank[evnt.rank-1::evnt.size-1])
         check_max_length(args, waveforms)

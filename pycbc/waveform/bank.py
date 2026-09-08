@@ -36,7 +36,8 @@ import pycbc.waveform
 import pycbc.pnutils
 import pycbc.waveform.compress
 from pycbc import DYN_RANGE_FAC
-from pycbc.types import FrequencySeries, zeros
+from pycbc.conversions import mchirp_from_mass1_mass2
+from pycbc.types import FrequencySeries, TimeSeries, zeros
 import pycbc.io
 from pycbc.io.ligolw import LIGOLWContentHandler
 import hashlib
@@ -1090,7 +1091,250 @@ class FilterBankSkyMax(TemplateBank):
         return hplus, hcross
 
 
+class LiveRatioFilterBank(TemplateBank):
+    """Hierarchical "Ratio-Filter Dechirping" bank for PyCBC Live.
+
+    The HDF5 file (produced by ``pycbc_fir_bank``) holds a dense "fine" bank at
+    the root and a sparse "coarse" reference bank at
+    ``fir_data/coarse_bank_params``.  For every coarse reference ``c`` the group
+    ``fir_data/<c>`` stores a short real FIR filter per associated fine template
+    (``taps``, ``actual_tap_count``, ``fine_bank_index``, ``sigmas``).
+
+    Only the coarse templates are ever matched-filtered against the data.  A
+    fine template's SNR time series is reconstructed by convolving its FIR
+    filter with the coarse reference's SNR time series
+    (Nitz, Kacanja & Soni, arXiv:2601.18835)::
+
+        (s|h)(t) = F^-1[ h~(f) / h~_ref(f) ]  *  (s|h)_ref(t)
+
+    This class mirrors the parts of :class:`LiveFilterBank`'s interface that
+    ``pycbc_live`` and the ratio matched-filter engine need: coarse templates
+    are generated through an internal :class:`LiveFilterBank` (adaptive
+    ``delta_f``, cached ``sigmasq``); ``self.table`` is the *fine* parameter
+    table; ``bank[fine_index]`` returns the reconstructed fine template (used by
+    the candidate-followup code only).
+
+    Parameters
+    ----------
+    filename : str
+        Path to the ratio-bank HDF5 file.
+    sample_rate : int
+        Filtering sample rate.
+    minimum_buffer : float
+        Minimum data buffer length (seconds), as for :class:`LiveFilterBank`.
+    approximant : str, optional
+        Waveform approximant for the coarse templates.
+    increment : int
+        Buffer-length rounding granularity (seconds).
+    low_frequency_cutoff : float, optional
+        Overrides the per-template ``f_lower`` in the file.
+    """
+
+    def __init__(self, filename, sample_rate, minimum_buffer,
+                 approximant=None, increment=8, parameters=None,
+                 low_frequency_cutoff=None, **kwds):
+
+        self.increment = increment
+        self.filename = filename
+        self.sample_rate = int(sample_rate)
+        self.minimum_buffer = minimum_buffer
+        self.f_lower = low_frequency_cutoff
+        self.dtype = np.complex64
+
+        # --- fine bank: parameters only, read from the file root ---
+        super(LiveRatioFilterBank, self).__init__(
+            filename, approximant=approximant, parameters=parameters, **kwds)
+
+        if 'fir_data' not in self.filehandler:
+            raise ValueError(
+                "%s has no 'fir_data' group; not a ratio-filter bank. Build "
+                "one with pycbc_fir_bank." % filename)
+        self.fir_group = self.filehandler['fir_data']
+        self.ensure_standard_filter_columns(
+            low_frequency_cutoff=low_frequency_cutoff)
+
+        # FIR taps are designed at this rate; the engine decimates if it
+        # differs from the filtering sample rate.
+        self.fir_sample_rate = int(
+            self.fir_group.attrs.get('sample_rate', self.sample_rate))
+
+        # --- coarse reference bank: full Live generation machinery ---
+        # Reuse our already-open file handle rather than reopening the file.
+        self.coarse_bank = LiveFilterBank(
+            filename, sample_rate, minimum_buffer,
+            approximant=approximant, increment=increment,
+            low_frequency_cutoff=low_frequency_cutoff,
+            group_key='fir_data/coarse_bank_params',
+            file_handler=self.file, **kwds)
+
+        self.min_f_lower = min(self.min_f_lower, self.coarse_bank.min_f_lower)
+
+        # coarse group keys are the string coarse-bank indices with FIR data
+        coarse_keys = sorted((k for k in self.fir_group.keys() if k.isdigit()),
+                             key=int)
+        self.coarse_indices = np.array([int(k) for k in coarse_keys], dtype=int)
+
+        # fine index -> (coarse index, local position within that FIR group)
+        self.fine_coarse_map = np.full((len(self.table), 2), -1, dtype=int)
+        self._fine_counts = {}
+        for k in coarse_keys:
+            fine_idx = self.fir_group[k]['fine_bank_index'][:]
+            self._fine_counts[int(k)] = len(fine_idx)
+            if len(fine_idx):
+                self.fine_coarse_map[fine_idx, 0] = int(k)
+                self.fine_coarse_map[fine_idx, 1] = np.arange(len(fine_idx))
+
+        # lazily-built normalization tables (see snr_rescale / sigma_rescale)
+        self._mchirp_rescale = None
+        self._sigma_snr_rescale = None
+        self._sigma_sig_rescale = None
+
+    # -- coarse template access -------------------------------------------
+
+    def round_up(self, num):
+        return self.coarse_bank.round_up(num)
+
+    def get_coarse_template(self, coarse_index):
+        """Return the frequency-domain coarse reference waveform (Live-decorated
+        with ``.sigmasq``, ``.delta_f``, ``.id`` ...)."""
+        return self.coarse_bank[int(coarse_index)]
+
+    def n_fine_for_coarse(self, coarse_index):
+        """Number of fine templates anchored to a coarse reference."""
+        return self._fine_counts.get(int(coarse_index), 0)
+
+    def get_firs(self, coarse_index):
+        """FIR data for the fine templates anchored to ``coarse_index``.
+
+        Returns ``(taps, actual_tap_counts, fine_indices)``, sorted by tap
+        count so the engine can batch similarly-sized filters.
+        """
+        g = self.fir_group[str(int(coarse_index))]
+        taps = g['taps'][:]
+        counts = g['actual_tap_count'][:]
+        fine_idx = g['fine_bank_index'][:]
+        order = np.argsort(counts)
+        return taps[order], counts[order], fine_idx[order]
+
+    def get_fd_fir(self, fine_index, delta_f):
+        """Reconstruct one fine template's frequency-domain FIR ratio filter
+        from its stored (centre-tap-at-0, circularly wrapped) taps.
+
+        Mirrors the layout produced in the engine's batched filter FFT.
+        """
+        coarse, local = self.fine_coarse_map[fine_index]
+        if coarse < 0:
+            raise KeyError("fine template %d has no FIR filter" % fine_index)
+        g = self.fir_group[str(int(coarse))]
+        taps = g['taps'][local]
+        size = int(g['actual_tap_count'][local])
+
+        tlen = int(round(self.fir_sample_rate / delta_f))
+        ts = np.zeros(tlen, dtype=np.float64)
+        start = size // 2
+        end = size - start
+        ts[:end] = taps[:size][start:]
+        if start:
+            ts[-start:] = taps[:size][:start]
+        fs = TimeSeries(ts, delta_t=1.0 / self.fir_sample_rate)
+        fs = fs.to_frequencyseries().astype(self.dtype)
+        fs.params = self.table[fine_index]
+        return fs
+
+    def reconstruct_template(self, fine_index, delta_f=None):
+        """Reconstruct a fine template as ``ratio_filter * coarse_reference``.
+
+        Only used for signal-consistency tests and candidate followup; the main
+        SNR path never builds this.
+        """
+        coarse, _ = self.fine_coarse_map[fine_index]
+        if coarse < 0:
+            raise KeyError("fine template %d has no FIR filter" % fine_index)
+        ref = self.get_coarse_template(int(coarse))
+        df = ref.delta_f if delta_f is None else delta_f
+        ratio = self.get_fd_fir(fine_index, df)
+        n = min(len(ref), len(ratio))
+        data = (ref.numpy()[:n] * ratio.numpy()[:n]).astype(self.dtype)
+        htilde = FrequencySeries(data, delta_f=float(ref.delta_f),
+                                 epoch=ref._epoch)
+        htilde.params = self.table[fine_index]
+        htilde.f_lower = ref.f_lower
+        htilde.min_f_lower = self.min_f_lower
+        htilde.end_idx = getattr(ref, 'end_idx', len(htilde) - 1)
+        htilde.end_frequency = getattr(ref, 'end_frequency', None)
+        htilde.approximant = getattr(ref, 'approximant', None)
+        htilde.chirp_length = getattr(ref, 'chirp_length', -1)
+        htilde.length_in_time = getattr(ref, 'length_in_time', -1)
+        if hasattr(ref, 'time_offset'):
+            htilde.time_offset = ref.time_offset
+        htilde.sigmasq = types.MethodType(sigma_cached, htilde)
+        htilde._sigmasq = {}
+        htilde.id = int(fine_index)
+        return htilde
+
+    def __getitem__(self, index):
+        if isinstance(index, slice):
+            raise TypeError("LiveRatioFilterBank does not support slicing; "
+                            "partition bank.coarse_indices instead")
+        return self.reconstruct_template(index)
+
+    # -- fine/coarse normalization --------------------------------------
+
+    def _build_mchirp_rescale(self):
+        mc_fine = mchirp_from_mass1_mass2(self.table['mass1'],
+                                          self.table['mass2'])
+        mc_coarse = mchirp_from_mass1_mass2(self.coarse_bank.table['mass1'],
+                                            self.coarse_bank.table['mass2'])
+        r = np.ones(len(self.table))
+        for k in self.coarse_indices:
+            fine_idx = self.fir_group[str(int(k))]['fine_bank_index'][:]
+            if len(fine_idx):
+                r[fine_idx] = (mc_fine[fine_idx] / mc_coarse[int(k)]) ** (5.0 / 6.0)
+        self._mchirp_rescale = r
+
+    def _build_sigma_rescale(self):
+        snr_r = np.ones(len(self.table))
+        sig_r = np.ones(len(self.table))
+        for k in self.coarse_indices:
+            g = self.fir_group[str(int(k))]
+            fine_idx = g['fine_bank_index'][:]
+            if not len(fine_idx):
+                continue
+            sig = g['sigmas'][:]
+            ref_sigma, rec_sigma, tgt_sigma = sig[:, 0], sig[:, 1], sig[:, 2]
+            snr_r[fine_idx] = rec_sigma / ref_sigma
+            sig_r[fine_idx] = tgt_sigma / ref_sigma
+        self._sigma_snr_rescale = snr_r
+        self._sigma_sig_rescale = sig_r
+
+    def snr_rescale(self, indices, method='precalculated_sigma'):
+        """Multiplicative factor turning a coarse-referenced SNR normalization
+        into the fine template's, i.e. ``sigma_fine / sigma_coarse``."""
+        if method == 'mchirp':
+            if self._mchirp_rescale is None:
+                self._build_mchirp_rescale()
+            return self._mchirp_rescale[indices]
+        if method == 'precalculated_sigma':
+            if self._sigma_snr_rescale is None:
+                self._build_sigma_rescale()
+            return self._sigma_snr_rescale[indices]
+        raise ValueError("unknown normalization method %r" % method)
+
+    def sigma_rescale(self, indices, method='precalculated_sigma'):
+        """Multiplicative factor turning the coarse template's sigma into the
+        fine template's stored sigma."""
+        if method == 'mchirp':
+            if self._mchirp_rescale is None:
+                self._build_mchirp_rescale()
+            return self._mchirp_rescale[indices]
+        if method == 'precalculated_sigma':
+            if self._sigma_sig_rescale is None:
+                self._build_sigma_rescale()
+            return self._sigma_sig_rescale[indices]
+        raise ValueError("unknown normalization method %r" % method)
+
+
 __all__ = ('sigma_cached', 'boolargs_from_apprxstr', 'add_approximant_arg',
            'parse_approximant_arg', 'tuple_to_hash', 'TemplateBank',
-           'LiveFilterBank', 'FilterBank', 'find_variable_start_frequency',
-           'FilterBankSkyMax')
+           'LiveFilterBank', 'LiveRatioFilterBank', 'FilterBank',
+           'find_variable_start_frequency', 'FilterBankSkyMax')

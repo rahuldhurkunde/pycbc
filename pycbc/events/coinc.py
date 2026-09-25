@@ -1060,10 +1060,11 @@ class LiveCoincTimeslideBackgroundEstimator(object):
         group.add_argument('--timeslide-interval', type=float,
             help="The interval between timeslides in seconds", default=0.1)
         group.add_argument('--ifar-remove-threshold', type=float,
-            help="If a zerolag coincidence has an inverse false alarm rate "
-                 "(in years) above this threshold, the analysis chunks "
-                 "containing its triggers are marked as loud and excluded "
-                 "from background estimation")
+                           help="If a zerolag coincidence has an inverse "
+                                "false alarm rate (in years) above this "
+                                "threshold, the analysis chunks containing "
+                                "its triggers are marked as loud and "
+                                "excluded from background estimation")
 
     @staticmethod
     def verify_args(args, parser):
@@ -1458,8 +1459,10 @@ class LiveCoincTimeslideBackgroundEstimator(object):
                     # Drop this update's background coincs involving the
                     # newly loud chunks before they enter the buffer
                     nd = numpy.array(new_loud, dtype=numpy.int64)
-                    tc0 = (ctime0[cidx] // self.analysis_block).astype(numpy.int64)
-                    tc1 = (ctime1[cidx] // self.analysis_block).astype(numpy.int64)
+                    tc0 = (ctime0[cidx] // self.analysis_block).astype(
+                        numpy.int64)
+                    tc1 = (ctime1[cidx] // self.analysis_block).astype(
+                        numpy.int64)
                     bkg_idx &= ~(numpy.isin(tc0, nd) | numpy.isin(tc1, nd))
 
             for ifo in self.ifos:

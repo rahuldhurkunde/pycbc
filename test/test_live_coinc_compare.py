@@ -319,7 +319,8 @@ class TestPyCBCLiveCoinc(unittest.TestCase):
         # Continue for a few more chunks, comfortably inside the lookback
         # window so the loud chunk isn't pruned yet: the exclusion should
         # keep reducing the thresholded coincer's background time.
-        for i in range(num_warmup + 1, min(num_warmup + 4, self.num_iterations)):
+        last = min(num_warmup + 4, self.num_iterations)
+        for i in range(num_warmup + 1, last):
             trigs = self.new_trigs[i]
             coincer_thresh.add_singles(copy.deepcopy(trigs))
             coincer_nothresh.add_singles(copy.deepcopy(trigs))

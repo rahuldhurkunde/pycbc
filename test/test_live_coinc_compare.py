@@ -107,7 +107,9 @@ class TestPyCBCLiveCoinc(unittest.TestCase):
         stat_file_paths = [
             download_file(url.format("H1L1"), cache=True),
         ]
-        args = SimpleNamespace(
+        # kept on self so other tests can build coincers with variations
+        # (e.g. a different ifar_remove_threshold)
+        self.args = args = SimpleNamespace(
             sngl_ranking="snr",
             ranking_statistic="phasetd",
             statistic_files=[stat_file_paths],
@@ -131,10 +133,6 @@ class TestPyCBCLiveCoinc(unittest.TestCase):
         # combination of two detectors to analyze
         detectors = ["H1", "L1"]
         self.detectors = detectors
-
-        # stashed for building extra coincer instances (e.g. with a
-        # different ifar_remove_threshold) in other tests
-        self.stat_file_paths = stat_file_paths
 
         # number of single-detector triggers per detector per chunk
         num_single_trigs = 400
@@ -256,26 +254,18 @@ class TestPyCBCLiveCoinc(unittest.TestCase):
         """
         threshold = 1.0  # years
 
-        base_kwargs = dict(
-            sngl_ranking="snr",
-            ranking_statistic="phasetd",
-            statistic_files=[self.stat_file_paths],
-            statistic_keywords=None,
-            statistic_features=None,
-            timeslide_interval=0.1,
-            background_ifar_limit=100,
-            store_background=True,
-            coinc_window_pad=0.002,
-            statistic_refresh_rate=None,
-        )
+        args_thresh = copy.copy(self.args)
+        args_thresh.ifar_remove_threshold = threshold
+        args_nothresh = copy.copy(self.args)
+        args_nothresh.ifar_remove_threshold = None
 
         coincer_thresh = Coincer.from_cli(
-            SimpleNamespace(ifar_remove_threshold=threshold, **base_kwargs),
-            self.num_templates, self.analysis_chunk, self.detectors
+            args_thresh, self.num_templates, self.analysis_chunk,
+            self.detectors
         )
         coincer_nothresh = Coincer.from_cli(
-            SimpleNamespace(ifar_remove_threshold=None, **base_kwargs),
-            self.num_templates, self.analysis_chunk, self.detectors
+            args_nothresh, self.num_templates, self.analysis_chunk,
+            self.detectors
         )
 
         # A few chunks of ordinary noise triggers to establish a

@@ -903,10 +903,18 @@ class LiveCoincTimeslideBackgroundEstimator(object):
         return_background: boolean
             If true, background triggers will also be included in the file
             output.
+        ifar_remove_threshold: float or None
+            If a zerolag coincidence has an IFAR (in
+            years) above this value, the analysis chunks containing its
+            triggers are marked as loud. Background coincidences involving
+            loud chunks are excluded from the background estimate, and loud
+            chunks do not count towards the background time. The zerolag
+            candidate itself is still reported. Default None, which
+            disables this removal.
         boundary_veto_window: float
             If a loud trigger falls within this many seconds of a chunk
             boundary, the neighbouring chunk is also flagged as loud.
-            Default 0.1 s. Applies to both IFAR-based and injection vetoes.
+            Default 0.1 s.
         kwargs: dict
             Additional options for the statistic to use. See stat.py
             for more details on statistic options.
@@ -1055,7 +1063,7 @@ class LiveCoincTimeslideBackgroundEstimator(object):
             help="If a zerolag coincidence has an inverse false alarm rate "
                  "(in years) above this threshold, the analysis chunks "
                  "containing its triggers are marked as loud and excluded "
-                 "from background estimation", default=None)
+                 "from background estimation")
 
     @staticmethod
     def verify_args(args, parser):
@@ -1111,6 +1119,13 @@ class LiveCoincTimeslideBackgroundEstimator(object):
         loud_time = len(self.loud_chunks) * self.analysis_block
         for ifo in self.singles:
             livetime = self.singles[ifo].filled_time * self.analysis_block
+            # Clamp at zero: loud chunks can cover the whole filled buffer
+            # (e.g. shortly after startup), which gives background_time = 0.
+            # The IFAR is then 0 / (n + 1) = 0: no division by zero and no
+            # crash. Live treats the candidate as very insignificant: its
+            # IFAR of 0 is below both the followup and upload thresholds, so
+            # it is saved in the output file but never followed up or
+            # uploaded, and it cannot mark a new loud chunk.
             time *= max(livetime - loud_time, 0)
         return time
 

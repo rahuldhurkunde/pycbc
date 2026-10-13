@@ -1138,6 +1138,7 @@ _filter_time_lengths["SEOBNRv4P"] = seobnrv4_length_in_time
 _filter_time_lengths["SEOBNRv5_ROM"] = seobnrv5_length_in_time
 _filter_time_lengths["IMRPhenomC"] = imrphenomd_length_in_time
 _filter_time_lengths["IMRPhenomD"] = imrphenomd_length_in_time
+_filter_time_lengths["IMRPhenomXAS"] = imrphenomd_length_in_time
 _filter_time_lengths["IMRPhenomPv2"] = imrphenomd_length_in_time
 _filter_time_lengths["IMRPhenomD_NRTidal"] = imrphenomd_length_in_time
 _filter_time_lengths["IMRPhenomPv2_NRTidal"] = imrphenomd_length_in_time

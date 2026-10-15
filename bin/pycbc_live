@@ -970,6 +970,15 @@ parser.add_argument('--output-background-n-loudest', type=int, default=10000,
 
 parser.add_argument('--newsnr-threshold', type=float, default=0)
 parser.add_argument('--max-batch-size', type=int, default=2**27)
+parser.add_argument('--matched-filter-backend', default='fftw',
+                    choices=['fftw', 'matchedfilter'],
+                    help="How each filtering process finds the SNR peak of "
+                         "each template. 'fftw' (default) correlates and "
+                         "inverse-FFTs through pycbc.fft. 'matchedfilter' "
+                         "uses the peak-only filter of the matchedfilter "
+                         "library; template durations are then rounded up "
+                         "to a power of two samples, so --max-length may "
+                         "need raising.")
 parser.add_argument('--store-loudest-index', type=int, default=0)
 parser.add_argument('--max-psd-abort-distance', type=float, default=numpy.inf,
                     help="Safety BNS horizon distance (in Mpc) above which a "
@@ -1107,7 +1116,8 @@ bank = waveform.LiveFilterBank(
     total_pad,
     low_frequency_cutoff=lfc,
     approximant=args.approximant,
-    increment=args.increment
+    increment=args.increment,
+    power_of_two=args.matched_filter_backend == 'matchedfilter'
 )
 if bank.min_f_lower < args.low_frequency_cutoff:
     parser.error('--low-frequency-cutoff ({} Hz) must not be larger than the '
@@ -1169,7 +1179,8 @@ with ctx:
             snr_abort_threshold=args.snr_abort_threshold,
             newsnr_threshold=args.newsnr_threshold,
             max_triggers_in_batch=args.max_triggers_in_batch,
-            maxelements=args.max_batch_size
+            maxelements=args.max_batch_size,
+            backend=args.matched_filter_backend
         )
 
     # Synchronize start time if not provided on the command line

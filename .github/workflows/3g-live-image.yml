@@ -1,17 +1,17 @@
-name: 3G live image
+name: 3G live image (matchedfilter)
 
 # Builds the merged Dockerfile natively on x86_64 GitHub runners (no QEMU),
 # pushes the Docker image to ghcr.io, then converts it to a Singularity/Apptainer
 # .sif and pushes that too as an ORAS artifact. On the cluster you then only do:
 #
-#   apptainer pull oras://ghcr.io/<owner>/pycbc-3g-live-sif:latest
+#   apptainer pull oras://ghcr.io/<owner>/pycbc-3g-live-mflib-sif:latest
 #
 # i.e. a plain blob download, no squashfs / extraction on the cluster.
 
 on:
   workflow_dispatch:
   push:
-    branches: [3G-main-branch]
+    branches: [3G-mflib]
     paths:
       - 'pycbc/**'
       - 'bin/**'
@@ -33,8 +33,8 @@ jobs:
       contents: read
       packages: write
     env:
-      IMAGE: ghcr.io/${{ github.repository_owner }}/pycbc-3g-live
-      SIF_REPO: ghcr.io/${{ github.repository_owner }}/pycbc-3g-live-sif
+      IMAGE: ghcr.io/${{ github.repository_owner }}/pycbc-3g-live-mflib
+      SIF_REPO: ghcr.io/${{ github.repository_owner }}/pycbc-3g-live-mflib-sif
     steps:
       - name: Free up runner disk space
         run: |

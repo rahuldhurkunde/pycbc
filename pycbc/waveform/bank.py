@@ -615,10 +615,11 @@ class TemplateBank(object):
 class LiveFilterBank(TemplateBank):
     def __init__(self, filename, sample_rate, minimum_buffer,
                        approximant=None, increment=8, parameters=None,
-                       low_frequency_cutoff=None,
+                       low_frequency_cutoff=None, power_of_two=False,
                        **kwds):
 
         self.increment = increment
+        self.power_of_two = power_of_two
         self.filename = filename
         self.sample_rate = sample_rate
         self.minimum_buffer = minimum_buffer
@@ -646,10 +647,14 @@ class LiveFilterBank(TemplateBank):
         size: int
             The rounded size to use for the waveform buffer in samples.
             This is calculated using an internal `increment` attribute, which
-            determines the discreteness of the rounding.
+            determines the discreteness of the rounding. If the bank was
+            created with `power_of_two`, the size is then rounded up to the
+            next power of two.
         """
         inc = self.increment
         size = np.ceil(num / self.sample_rate / inc) * self.sample_rate * inc
+        if self.power_of_two:
+            size = 2 ** np.ceil(np.log2(size))
         return size
 
     def getslice(self, sindex):

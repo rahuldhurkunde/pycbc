@@ -1528,7 +1528,8 @@ class LiveBatchMatchedFilter(object):
                  maxelements=2**27,
                  snr_abort_threshold=None,
                  newsnr_threshold=None,
-                 max_triggers_in_batch=None):
+                 max_triggers_in_batch=None,
+                 backend='fftw'):
         """Create a batched matchedfilter instance
 
         Parameters
@@ -1553,6 +1554,12 @@ class LiveBatchMatchedFilter(object):
             Record X number of the loudest triggers by SNR in each MPI
             process. Signal consistency values will also only be calculated
             for these triggers.
+        backend: {'fftw', 'matchedfilter'}
+            How to find each template's SNR peak. 'fftw' correlates and runs a
+            batched inverse FFT through pycbc.fft. 'matchedfilter' uses the
+            peak-only filter of the matchedfilter library, which never stores
+            the SNR time series; it needs template lengths that are powers of
+            two (see LiveFilterBank's `power_of_two` option).
         """
         self.snr_threshold = snr_threshold
         self.snr_abort_threshold = snr_abort_threshold
@@ -1562,6 +1569,13 @@ class LiveBatchMatchedFilter(object):
         from pycbc import vetoes
         self.power_chisq = vetoes.SingleDetPowerChisq(chisq_bins, None)
         self.sg_chisq = sg_chisq
+
+        if backend not in ('fftw', 'matchedfilter'):
+            raise ValueError(f'Unknown matched-filter backend {backend}')
+        self.backend = backend
+        if backend == 'matchedfilter':
+            self._init_matchedfilter_lib(templates)
+            return
 
         durations = numpy.array([1.0 / t.delta_f for t in templates])
 
@@ -1631,6 +1645,88 @@ class LiveBatchMatchedFilter(object):
                 s += psize
                 e += psize
             self.corr.append(BatchCorrelator(tgroup, [t.cout for t in tgroup], len(tgroup[0])))
+
+    def _init_matchedfilter_lib(self, templates):
+        """Set up peak-only filtering with the matchedfilter library.
+
+        Templates are grouped by length N and each group becomes one
+        `matchedfilter.MatchedFilter` of length K = N / 2. The templates are
+        one-sided (zero from the Nyquist bin up), so with w = exp(2 pi i / N)
+        the length-N SNR series splits exactly into its even and odd samples,
+
+            z[2m]     = IFFT_K(s h*)[m]
+            z[2m + 1] = IFFT_K((s w^k) h*)[m],
+
+        i.e. two data rows per chunk against the same template rows. The
+        library multiplies the spectra inside its inverse FFT and keeps only
+        the loudest sample, so neither the product nor the SNR series is
+        written to memory.
+        """
+        import matchedfilter as mflib
+
+        tsamples = numpy.array([(len(t) - 1) * 2 for t in templates])
+        order = tsamples.argsort(kind='stable')
+        self.tgroups, self.chunk_tsamples, self.mids = [], [], []
+        self.mf_filters, self.mf_phase, self.mf_rows = [], [], []
+        nyquist = 0
+        for N in numpy.unique(tsamples):
+            N = int(N)
+            if N & (N - 1):
+                raise ValueError(
+                    'The matchedfilter backend needs template lengths that '
+                    f'are powers of two, got {N} samples')
+            K = N // 2
+            tgroup = [templates[i] for i in order if tsamples[i] == N]
+            filt = mflib.MatchedFilter(K, ndata=2, ntemplates=len(tgroup))
+            # One correlation workspace per length, for the vetoes on the
+            # loudest triggers, which run one template at a time.
+            cout = zeros(N, dtype=numpy.complex64)
+            for j, htilde in enumerate(tgroup):
+                h = htilde.numpy()
+                nyquist += h[K] != 0
+                # A view of PyCBC's array; the library copies it into its own
+                # layout, so ingesting one template at a time needs no
+                # temporary copy of the whole bank.
+                filt.set_templates(h[:K], index=j)
+                htilde.cout = cout
+            self.tgroups.append(tgroup)
+            self.chunk_tsamples.append(N)
+            self.mids.append(None)
+            self.mf_filters.append(filt)
+            k = numpy.arange(K)
+            self.mf_phase.append(
+                numpy.exp(2j * numpy.pi * k / N).astype(numpy.complex64))
+            self.mf_rows.append(numpy.empty((2, K), dtype=numpy.complex64))
+        if nyquist:
+            logger.warning('%d templates have power in the Nyquist bin, which '
+                           'the matchedfilter backend ignores', nyquist)
+        logger.info('matchedfilter %s (%s): %d templates in %d length groups',
+                    mflib.__version__, mflib.backend(), len(templates),
+                    len(self.tgroups))
+
+    def _matchedfilter_lib_peaks(self, stilde, valid_start, valid_end):
+        """Loudest SNR sample of each template in [valid_start, valid_end).
+
+        Returns the sample indices (in the length-N series) and the
+        unnormalized complex SNR values, one per template in the group.
+        """
+        if valid_start % 2 or valid_end % 2:
+            raise ValueError('The matchedfilter backend needs an even valid '
+                             f'window, got [{valid_start}, {valid_end})')
+        g = self.block_id
+        rows, phase, filt = self.mf_rows[g], self.mf_phase[g], self.mf_filters[g]
+        K = rows.shape[1]
+        s = stilde.numpy()[:K]
+        rows[0] = s
+        numpy.multiply(s, phase, out=rows[1])
+        filt.set_data(rows)
+        peaks = filt.run(binsize=(valid_end - valid_start) // 2, threshold=0.0,
+                         window=(valid_start // 2, valid_end // 2))
+        idx = peaks['index'][:, :, 0]
+        val = peaks['value'][:, :, 0]
+        odd = abs(val[1]) > abs(val[0])
+        lags = numpy.where(odd, 2 * idx[1] + 1, 2 * idx[0])
+        return lags, numpy.where(odd, val[1], val[0])
 
     def set_data(self, data):
         """Set the data reader object to use"""
@@ -1724,13 +1820,17 @@ class LiveBatchMatchedFilter(object):
 
         seg = slice(valid_start, valid_end)
 
-        # Ensure memory is 0 before correlating
-        flen = len(tgroup[0])
-        cmem = self.cout_mem[mid].data.reshape(len(tgroup), psize)
-        cmem[:, flen:] = 0
+        if self.backend == 'matchedfilter':
+            peak_lags, peak_values = self._matchedfilter_lib_peaks(
+                stilde, valid_start, valid_end)
+        else:
+            # Ensure memory is 0 before correlating
+            flen = len(tgroup[0])
+            cmem = self.cout_mem[mid].data.reshape(len(tgroup), psize)
+            cmem[:, flen:] = 0
 
-        self.corr[self.block_id].execute(stilde)
-        self.ifts[mid].execute()
+            self.corr[self.block_id].execute(stilde)
+            self.ifts[mid].execute()
 
         self.block_id += 1
 
@@ -1750,18 +1850,20 @@ class LiveBatchMatchedFilter(object):
 
         # Find the peaks in our SNR times series from the various templates
         i = 0
-        for htilde in tgroup:
+        for j, htilde in enumerate(tgroup):
             if hasattr(htilde, 'time_offset'):
                 if 'time_offset' not in result:
                     result['time_offset'] = []
 
-            l = htilde.out[seg].abs_arg_max()
-
             sgm = htilde.sigmasq(psd)
             norm = 4.0 * htilde.delta_f / (sgm ** 0.5)
 
-            l += valid_start
-            snrv = numpy.array([htilde.out[l]])
+            if self.backend == 'matchedfilter':
+                l = int(peak_lags[j])
+                snrv = peak_values[j:j + 1].copy()
+            else:
+                l = htilde.out[seg].abs_arg_max() + valid_start
+                snrv = numpy.array([htilde.out[l]])
 
             # If nothing is above threshold we can exit this template
             s = abs(snrv[0]) * norm

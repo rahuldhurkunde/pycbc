@@ -61,7 +61,7 @@ ADD requirements-igwn.txt /etc/requirements-igwn.txt
 ADD companion.txt /etc/companion.txt
 
 # Replace the github repo accordingly
-RUN /bin/sh -c pip install -r /etc/requirements.txt && pip install gwpy>=0.8.1  && pip install git+https://github.com/rahuldhurkunde/pycbc.git@3G-main-branch
+RUN /bin/sh -c pip install -r /etc/requirements.txt && pip install gwpy>=0.8.1  && pip install git+https://github.com/rahuldhurkunde/pycbc.git@3G-mflib && pip install matchedfilter==0.1.0a8
 
 ADD docker/etc/docker-install.sh /etc/docker-install.sh
 

@@ -279,7 +279,11 @@ class RatioMatchedFilterControl(object):
         j_ends = np.minimum(lowband_snrs.shape[1], j_ends)
 
         valid = np.resize(valid, len(filters_f) * len(t_starts)).reshape(len(filters_f), len(t_starts))
+        n_in_window = int(valid.sum())
         block_max_threshold(lowband_snrs, j_starts, j_ends, valid, gate_threshold)
+        logging.info("GATE PASS %d / %d (template, block) pairs = %.4f; median gate %.3f",
+                     valid.sum(), n_in_window, valid.sum() / max(n_in_window, 1),
+                     np.median(gate_threshold))
          
         n_time_blocks = len(t_starts)
         time_chunks_with_work = np.any(valid, axis=0)

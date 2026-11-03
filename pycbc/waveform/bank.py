@@ -37,7 +37,7 @@ import pycbc.pnutils
 import pycbc.waveform.compress
 from pycbc.conversions import mchirp_from_mass1_mass2
 from pycbc import DYN_RANGE_FAC
-from pycbc.types import FrequencySeries, zeros
+from pycbc.types import FrequencySeries, zeros, TimeSeries
 import pycbc.io
 from pycbc.io.ligolw import LIGOLWContentHandler
 import hashlib
@@ -1123,10 +1123,17 @@ class RatioFilterBank(FilterBank):
     def __init__(self, filename, filter_length, delta_f, dtype,
                  approximant=None, **kwds):
 
+        # filter_length may be a (fine, coarse) tuple: the multi-reference
+        # search generates fine templates only up to the split frequency
+        if isinstance(filter_length, tuple):
+            filter_length_fine, filter_length_coarse = filter_length
+        else:
+            filter_length_fine = filter_length_coarse = filter_length
+
         # 1. Initialize self as the "Fine" bank (Root of HDF5)
         # This gives us access to self.table (the target parameters)
         super(RatioFilterBank, self).__init__(
-            filename, filter_length, delta_f, dtype,
+            filename, filter_length_fine, delta_f, dtype,
             approximant=approximant, **kwds
         )
 
@@ -1139,13 +1146,21 @@ class RatioFilterBank(FilterBank):
         # 2. Initialize the internal Coarse Bank
         # We use the reuse strategy: passing our own filehandler to avoid
         # re-opening the file, and using group_key to point to the params.
-        self.coarse_bank = FilterBank(
-            filename, filter_length, delta_f, dtype,
-            approximant=approximant, # We assume coarse/fine use same approximant
-            group_key='fir_data/coarse_bank_params',
-            file_handler=self.filehandler,
-            **kwds
-        )
+        if 'flat_reference' in self.fir_group:
+            # A single reference that is flat between two frequencies
+            fmin, fmax = self.fir_group['flat_reference'][:]
+            ref_vals = np.zeros(filter_length_coarse, dtype=np.complex64)
+            ref_vals[int(fmin / delta_f):int(fmax / delta_f)] = 1.0 + 1.0j
+            self.coarse_bank = [FrequencySeries(ref_vals, delta_f=delta_f,
+                                                epoch=0)]
+        else:
+            self.coarse_bank = FilterBank(
+                filename, filter_length_coarse, delta_f, dtype,
+                approximant=approximant, # We assume coarse/fine use same approximant
+                group_key='fir_data/coarse_bank_params',
+                file_handler=self.filehandler,
+                **kwds
+            )
 
         # Load metadata attributes
         self.n_taps = self.fir_group.attrs.get('n_taps', None)
@@ -1204,6 +1219,31 @@ class RatioFilterBank(FilterBank):
         else:
             self.coarse_indices = []
 
+    def get_fine_indices(self, coarse_index):
+        """Indices into the fine bank of the templates that use this
+        coarse reference, in FIR storage order."""
+        return self.fir_group[str(coarse_index)]['fine_bank_index'][:]
+
+    def get_fine_templates(self, coarse_index, indices=None):
+        """Generate the fine templates that use this coarse reference.
+
+        Parameters
+        ----------
+        coarse_index : int
+            The index of the template in the *coarse* bank.
+        indices : {None, slice or array}
+            Subset of the group, in FIR storage order. Matches the order
+            returned by get_firs with the same indices.
+
+        Returns
+        -------
+        templates : list of FrequencySeries
+        """
+        fine_indices = self.get_fine_indices(coarse_index)
+        if indices is not None:
+            fine_indices = fine_indices[indices]
+        return [self[fid] for fid in fine_indices]
+
     def get_coarse_template(self, coarse_index):
         """Wrapper to get the frequency-domain waveform from the internal coarse bank.
 
@@ -1226,8 +1266,12 @@ class RatioFilterBank(FilterBank):
         """
         mc_bank = mchirp_from_mass1_mass2(self.table['mass1'],
                                           self.table['mass2'])
-        mc_coarse = mchirp_from_mass1_mass2(self.coarse_bank.table['mass1'],
-                                            self.coarse_bank.table['mass2'])
+        if 'flat_reference' in self.fir_group:
+            mc_coarse = np.array([1.0], ndmin=1)
+        else:
+            mc_coarse = mchirp_from_mass1_mass2(
+                self.coarse_bank.table['mass1'],
+                self.coarse_bank.table['mass2'])
 
         self.mchirp_norm_rescale = np.ones(len(self.table))
         for coarse_id in self.coarse_indices:
@@ -1296,7 +1340,24 @@ class RatioFilterBank(FilterBank):
         else:
             raise ValueError('undefined fine template normalization method %s' % method)
 
-    def get_firs(self, coarse_index):
+    def get_fd_fir(self, fine_index, flen, delta_f):
+        """Frequency-domain FIR filter of one fine template."""
+        coarse, local = self.fine_coarse_map[fine_index]
+        taps = self.fir_group[str(coarse)]['taps'][local]
+        size = self.fir_group[str(coarse)]['actual_tap_count'][local]
+
+        tlen = int(self.sample_rate / delta_f)
+        ts = np.zeros(tlen)
+        start = size // 2
+        end = len(taps) - start
+        ts[:end] = taps[-end:]
+        ts[-start:] = taps[:start]
+        ts = TimeSeries(ts, delta_t=1.0/self.sample_rate)
+        fs = ts.to_frequencyseries().astype(self.dtype)
+        fs.params = self.table[fine_index]
+        return fs
+
+    def get_firs(self, coarse_index, indices=None):
         """Retrieve the FIR tap information for the batch of fine templates
         associated with a specific coarse reference.
 
@@ -1321,6 +1382,13 @@ class RatioFilterBank(FilterBank):
             raise ValueError(f"Coarse index {coarse_index} not found in FIR data.")
 
         c_group = self.fir_group[group_key]
+
+        if indices is not None:
+            # A batch of the group, kept in storage order so that it lines
+            # up with get_fine_templates(coarse_index, indices)
+            return (c_group['taps'][indices],
+                    c_group['actual_tap_count'][indices],
+                    c_group['fine_bank_index'][indices])
 
         taps = c_group['taps'][:]
         actual_tap_counts = c_group['actual_tap_count'][:]

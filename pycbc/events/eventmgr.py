@@ -493,6 +493,10 @@ class EventManager(object):
 
         if len(self.events):
             f['snr'] = abs(self.events['snr'])
+            if 'snr_low' in self.events.dtype.names:
+                # Multiband searches: SNR below and above the split
+                f['snr_low'] = self.events['snr_low']
+                f['snr_high'] = self.events['snr_high']
             try:
                 # Precessing
                 f['u_vals'] = self.events['u_vals']

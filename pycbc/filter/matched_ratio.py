@@ -17,7 +17,9 @@ class RatioMatchedFilterControl(object):
                  high_frequency_cutoff=None,
                  fir_fft_length=4096,
                  batch_size=64, 
-                 multiband_frequency=None):
+                 multiband_frequency=None,
+                 gate_safety_sigma=4.0,
+                 gate_extra_margin=0.05):
         self.delta_f = delta_f
         self.snr_threshold = snr_threshold
         self.f_high = high_frequency_cutoff
@@ -40,6 +42,11 @@ class RatioMatchedFilterControl(object):
         self.fft_lib = mkl_fft
         
         self.multiband_frequency = multiband_frequency
+        # A (template, block) pair is filtered only if its low-band SNR
+        # reaches snr_threshold * rw_low - gate_safety_sigma * rw_high
+        # - gate_extra_margin
+        self.gate_safety_sigma = gate_safety_sigma
+        self.gate_extra_margin = gate_extra_margin
         self.hnorms_low = None
 
         self.flen = int(self.multiband_frequency / self.delta_f)
@@ -146,9 +153,9 @@ class RatioMatchedFilterControl(object):
         logging.info('.....done')                
         t4 = time.time()
 
-        safety_sigma = 4.0
-        extra_margin = 0.05
-        gate_threshold = np.maximum(0.0, self.snr_threshold * rw_low - safety_sigma * rw_high - extra_margin)
+        gate_threshold = np.maximum(
+            0.0, self.snr_threshold * rw_low
+            - self.gate_safety_sigma * rw_high - self.gate_extra_margin)
 
         # 3. Execute Blocked Kernel
         local_idxs, t_idxs, snr_vals, snr_low_vals, tstarts = self._execute_blocked_kernel(

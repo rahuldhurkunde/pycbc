@@ -219,6 +219,13 @@ def get_args():
     parser.add_argument("--multiband-frequency", type=float)
     parser.add_argument("--template-batch-size", type=int, default=1000)
     parser.add_argument("--band-ratio-threshold", default=1.0, type=float)
+    parser.add_argument("--gate-safety-sigma", default=4.0, type=float,
+                        help="High-band noise allowance of the low-band "
+                             "gate, in units of the high-band SNR "
+                             "normalization. Larger passes more blocks.")
+    parser.add_argument("--gate-extra-margin", default=0.05, type=float,
+                        help="Extra SNR margin subtracted from the "
+                             "low-band gate threshold.")
 
     return parser, parser.parse_args()
 
@@ -283,6 +290,8 @@ def main():
             fir_fft_length=args.fir_length,
             batch_size=args.template_batch_size,
             multiband_frequency=args.multiband_frequency,
+            gate_safety_sigma=args.gate_safety_sigma,
+            gate_extra_margin=args.gate_extra_margin,
         )
         
         power_chisq = pycbc.vetoes.SingleDetPowerChisq(args.chisq_bins)

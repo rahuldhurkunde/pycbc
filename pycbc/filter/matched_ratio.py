@@ -87,6 +87,9 @@ class RatioMatchedFilterControl(object):
             stilde.ref_hnorm = h_norm    
             stilde.ref_snr = ref_snr
             stilde.ref_template_id = id(ref_template)
+            # The block FFTs below are of ref_snr, so they belong to this
+            # reference only
+            stilde.block_f_cache = {}
         
         ref_snr = stilde.ref_snr
         ref_hnorm = stilde.ref_hnorm

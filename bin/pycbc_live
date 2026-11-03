@@ -1384,7 +1384,9 @@ with ctx:
 
                     results[ifo]['psd_var_val'] = psd_var_vals
 
-            # Look for coincident triggers and do background estimation
+            # Look for coincident triggers and do background estimation.
+            # Without it there are no coincs to store with the triggers.
+            best_coinc = {}
             if args.enable_background_estimation:
                 coinc_results = coinc_pool.broadcast(get_coinc, results)
 

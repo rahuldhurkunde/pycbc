@@ -983,6 +983,29 @@ parser.add_argument('--max-triggers-in-batch', type=int, metavar="N",
 parser.add_argument('--max-length', type=float,
                     help='Maximum duration of templates, used to set the data buffer size')
 
+ratio_group = parser.add_argument_group(
+    'Multiband ratio filter',
+    'With --multiband-frequency the bank file is a FIR (ratio) bank from '
+    'pycbc_fir_bank and the workers filter with LiveRatioBatchMatchedFilter.')
+ratio_group.add_argument('--multiband-frequency', type=float,
+                         help='Split frequency of the FIR bank (Hz). Enables '
+                              'the ratio filter.')
+ratio_group.add_argument('--ratio-segment-length', type=int, default=256,
+                         help='Length (s) of the data segment filtered each '
+                              'stride; must cover the longest template and '
+                              'match the delta_f the FIR bank was built for.')
+ratio_group.add_argument('--fir-length', type=int, default=4096,
+                         help='FFT block length for applying the FIR filters.')
+ratio_group.add_argument('--template-batch-size', type=int, default=250,
+                         help='Fine templates filtered together; sets memory.')
+ratio_group.add_argument('--gate-safety-sigma', type=float, default=6.0,
+                         help='High-band noise allowance of the low-band gate.')
+ratio_group.add_argument('--gate-extra-margin', type=float, default=0.05,
+                         help='Extra SNR margin of the low-band gate.')
+ratio_group.add_argument('--band-ratio-threshold', type=float, default=1.0,
+                         help='Triggers with |SNR above split| / |SNR below '
+                              'split| at or above this get chisq 1e9.')
+
 parser.add_argument('--enable-profiling', type=int, metavar='RANK',
                     help='Dump out profiling information from the MPI process'
                          ' with given rank at the end of program execution')
@@ -1157,7 +1180,13 @@ with ctx:
         print(e)
         exit()
 
-    if evnt.rank > 0:
+    if evnt.rank > 0 and args.multiband_frequency:
+        if args.ratio_segment_length > args.max_length:
+            parser.error('--ratio-segment-length must not exceed --max-length')
+        from pycbc.filter.live_ratio import LiveRatioBatchMatchedFilter
+        mf = LiveRatioBatchMatchedFilter.from_cli(
+            args, bank, evnt.rank - 1, evnt.size - 1)
+    elif evnt.rank > 0:
         bank.table.sort(order='mchirp')
         waveforms = list(bank[evnt.rank-1::evnt.size-1])
         check_max_length(args, waveforms)

@@ -158,7 +158,7 @@ class LiveRatioBatchMatchedFilter(object):
         for b in self.batches:
             eng = self.engine
             eng.hnorms_low = b.hnorms_low if b.hnorms_psd is psd else None
-            ids, t_idxs, snrs, snrs_low, snrs_high, _, h_norm = \
+            ids, t_idxs, snrs, snrs_low, snrs_high, _, h_norm, sigmasq = \
                 eng.process_segment(
                     stilde, psd, self.coarse[b.coarse_index], b.filters_f,
                     b.counts, numpy.arange(len(b.fine_ids)),
@@ -171,7 +171,8 @@ class LiveRatioBatchMatchedFilter(object):
                 s = abs(snrs[j])
                 if fid not in best or s > abs(best[fid][1]):
                     best[fid] = (int(t_idxs[j]), snrs[j], snrs_low[j],
-                                 snrs_high[j], float(h_norm[j]), b, ids[j])
+                                 snrs_high[j], float(h_norm[j]), b, ids[j],
+                                 float(sigmasq[j]))
 
         if self.snr_abort_threshold is not None and best and \
                 max(abs(v[1]) for v in best.values()) > \
@@ -195,7 +196,7 @@ class LiveRatioBatchMatchedFilter(object):
         result['end_time'] = data_reader.start_time + \
             (tidx - valid_start) / float(data_reader.sample_rate)
         result['template_id'] = fids.astype(numpy.uint64)
-        result['sigmasq'] = numpy.array([best[f][4] for f in fids],
+        result['sigmasq'] = numpy.array([best[f][7] for f in fids],
                                         dtype=numpy.float32)
         result['chisq'] = numpy.zeros(n, dtype=numpy.float32)
         result['chisq_dof'] = numpy.zeros(n, dtype=numpy.uint32)
@@ -218,7 +219,7 @@ class LiveRatioBatchMatchedFilter(object):
     def _chisq(self, trig, stilde, psd):
         """Power chisq over the band below the split, plus a 2 dof term for
         the consistency of the low and high band SNRs (as offline)."""
-        t_idx, snr, snr_low, snr_high, h_norm, b, local = trig
+        t_idx, snr, snr_low, snr_high, h_norm, b, local, _ = trig
         if abs(snr_high) / abs(snr_low) >= self.band_ratio_threshold:
             # Most of the SNR is above the split: assume a glitch
             return 1e9, 1

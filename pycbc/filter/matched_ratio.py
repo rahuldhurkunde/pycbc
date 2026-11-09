@@ -174,10 +174,10 @@ class RatioMatchedFilterControl(object):
         if len(local_idxs) > 0:
             print("NON EMPTRY RETURN")
             global_ids = indices[local_idxs]
-            return global_ids, t_idxs, snr_vals, snr_low_vals, snr_high_vals, tstarts, hnorms_low[local_idxs]
+            return global_ids, t_idxs, snr_vals, snr_low_vals, snr_high_vals, tstarts, hnorms_low[local_idxs], sigma_total[local_idxs]
         else:
             print("EMPTRY RETURN")
-            return [], [], [], [], [], [], []
+            return [], [], [], [], [], [], [], []
 
     def _fft_all_filters(self, taps, counts):
         """Helper to FFT all filters using mkl_fft."""

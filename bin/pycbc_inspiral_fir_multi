@@ -397,7 +397,7 @@ def main():
                     t1 = time.time()
                     
 
-                    ids_local, t_idxs, snrs, snrs_low, snrs_high, tstarts, h_norm = engine.process_segment(
+                    ids_local, t_idxs, snrs, snrs_low, snrs_high, tstarts, h_norm, sigmasq = engine.process_segment(
                         stilde, stilde.psd, ref_template, filters_f, counts,
                         np.arange(len(fine_indices)),
                         valid_slice=stilde.analyze,
@@ -415,7 +415,7 @@ def main():
                         seg_snr_low_sqs.append(snrs_low)
                         seg_snr_high_sqs.append(snrs_high)
                         seg_fine_mappings.append(fine_indices)
-                        seg_h_norms.append(h_norm)
+                        seg_h_norms.append(sigmasq)
                         seg_coarse_ids.append(coarse_idx)
                         seg_chi.append(chi)
                         seg_chi_dof.append(chi_dof)
